@@ -13,6 +13,7 @@ import com.example.demo.repository.UserCredentialsRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.AuthTokenService;
 import com.example.demo.service.ConnectionService;
+import com.example.demo.service.OtpService;
 import com.example.demo.service.PlacementService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -38,6 +39,7 @@ public class AuthController {
     private final ConnectionService connectionService;
     private final PlacementService placementService;
     private final PasswordEncoder passwordEncoder;
+    private final OtpService otpService;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
@@ -103,6 +105,26 @@ public class AuthController {
 
         User user = credentials.getUser();
         log.info("User {} logged in", user.getId());
+        String token = authTokenService.issueToken(user);
+        List<UUID> relationships = connectionService.getNeighborIds(user.getId());
+        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+    }
+
+    @PostMapping("/initiate-otp")
+    public ResponseEntity<Void> initiateOtp(@RequestBody String phoneNumber) {
+        otpService.sendOtp(phoneNumber);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/verify-otp")
+    public ResponseEntity<AuthResponse> verifyOtp(@RequestParam String phoneNumber, @RequestParam String code) {
+        if (!otpService.verifyOtp(phoneNumber, code)) {
+            throw new BadRequestException("Invalid or expired OTP");
+        }
+        
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() -> new BadRequestException("User not found"));
+                
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));

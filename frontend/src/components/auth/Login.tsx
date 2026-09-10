@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { User } from '../../services/userService';
-import { login, saveSession } from '../../services/authService';
+import { initiateOtp, verifyOtp, saveSession } from '../../services/authService';
 import { extractErrorMessage } from '../../services/apiClient';
 
 interface LoginProps {
@@ -9,20 +9,34 @@ interface LoginProps {
 }
 
 export const Login = ({ onLogin }: LoginProps) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = async () => {
+  const handleInitiate = async () => {
     setError('');
     setIsSubmitting(true);
     try {
-      const auth = await login({ username, password });
+      await initiateOtp(phoneNumber);
+      setStep('OTP');
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Failed to send code');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const auth = await verifyOtp(phoneNumber, code);
       saveSession(auth);
       onLogin(auth.user);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'An error occurred');
+      setError(extractErrorMessage(err) || 'Invalid code');
     } finally {
       setIsSubmitting(false);
     }
@@ -31,15 +45,21 @@ export const Login = ({ onLogin }: LoginProps) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '10px' }}>
       <h2>Login</h2>
-      <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-      <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      {step === 'PHONE' ? (
+        <>
+          <input type="text" placeholder="Phone Number" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+          <button disabled={isSubmitting} onClick={handleInitiate}>{isSubmitting ? 'Sending...' : 'Send Code'}</button>
+        </>
+      ) : (
+        <>
+          <input type="text" placeholder="Verification Code" value={code} onChange={(e) => setCode(e.target.value)} />
+          <button disabled={isSubmitting} onClick={handleVerify}>{isSubmitting ? 'Verifying...' : 'Verify'}</button>
+        </>
+      )}
 
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button disabled={isSubmitting} onClick={handleLogin}>{isSubmitting ? 'Signing in...' : 'Login'}</button>
-        <Link to="/register">
-          <button>Go to Register</button>
-        </Link>
-      </div>
+      <Link to="/register">
+        <button>Go to Register</button>
+      </Link>
       {error && <p style={{ color: '#ff6b6b' }}>{error}</p>}
     </div>
   );

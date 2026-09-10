@@ -33,6 +33,15 @@ export const login = async (payload: LoginPayload): Promise<AuthResponse> => {
   return response.data;
 };
 
+export const initiateOtp = async (phoneNumber: string): Promise<void> => {
+  await apiClient.post('/api/auth/initiate-otp', phoneNumber);
+};
+
+export const verifyOtp = async (phoneNumber: string, code: string): Promise<AuthResponse> => {
+  const response = await apiClient.post<AuthResponse>(`/api/auth/verify-otp?phoneNumber=${encodeURIComponent(phoneNumber)}&code=${encodeURIComponent(code)}`);
+  return response.data;
+};
+
 export const saveSession = (auth: AuthResponse): void => {
   localStorage.setItem(TOKEN_KEY, auth.token);
   localStorage.setItem(USER_KEY, JSON.stringify(auth.user));
