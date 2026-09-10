@@ -25,3 +25,4 @@ out/
 
 # Docker
 postgres_data/
+.env
