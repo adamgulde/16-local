@@ -19,7 +19,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'com.twilio.sdk:twilio:10.10.0'
+    implementation 'com.twilio.sdk:twilio:13.0.0'
     implementation 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'
