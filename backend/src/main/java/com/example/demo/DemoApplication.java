@@ -1,14 +1,24 @@
 package com.example.demo;
 
+import com.example.demo.model.ConnectionRequest;
+import com.example.demo.model.Tag;
 import com.example.demo.model.User;
+import com.example.demo.model.UserCredentials;
+import com.example.demo.repository.ConnectionRequestRepository;
+import com.example.demo.repository.TagRepository;
+import com.example.demo.repository.UserCredentialsRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.ConnectionService;
+import com.example.demo.service.PlacementService;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+import java.util.Random;
 
 @SpringBootApplication
 public class DemoApplication {
@@ -16,48 +26,205 @@ public class DemoApplication {
         SpringApplication.run(DemoApplication.class, args);
     }
 
-    @Bean
-    CommandLineRunner initDatabase(UserRepository userRepository) {
-        return args -> {
-            if (userRepository.count() == 0) {
-                List<User> users = new java.util.ArrayList<>();
-                for (int i = 1; i <= 20; i++) {
-                    users.add(User.builder().firstName("User").lastName(String.valueOf(i)).phoneNumber(String.valueOf(100000000 + i)).relationships(new java.util.ArrayList<>()).build());
-                }
-                userRepository.saveAll(users);
+    /**
+     * Marvel, DC, and video-game character names for seed users 6+ (1-5 stay generic "User N"),
+     * so the demo directory has recognizable, distinct-looking entries instead of a wall of
+     * "User 6".."User 105". Order only matters in that it's assigned sequentially by user
+     * number; falls back to "User N" if ever exhausted (see nameFor below).
+     */
+    private static final String[][] CHARACTER_NAMES = {
+            {"Tony", "Stark"}, {"Steve", "Rogers"}, {"Natasha", "Romanoff"}, {"Bruce", "Banner"},
+            {"Peter", "Parker"}, {"Wanda", "Maximoff"}, {"Stephen", "Strange"}, {"Carol", "Danvers"},
+            {"Scott", "Lang"}, {"Clint", "Barton"}, {"Sam", "Wilson"}, {"Bucky", "Barnes"},
+            {"Reed", "Richards"}, {"Susan", "Storm"}, {"Johnny", "Storm"}, {"Ben", "Grimm"},
+            {"Charles", "Xavier"}, {"Erik", "Lehnsherr"}, {"Jean", "Grey"}, {"Scott", "Summers"},
+            {"Ororo", "Munroe"}, {"Logan", "Howlett"}, {"Hank", "McCoy"}, {"Kurt", "Wagner"},
+            {"Piotr", "Rasputin"}, {"Kitty", "Pryde"}, {"Matt", "Murdock"}, {"Jessica", "Jones"},
+            {"Luke", "Cage"}, {"Danny", "Rand"}, {"Frank", "Castle"}, {"Eddie", "Brock"},
+            {"Miles", "Morales"}, {"Gwen", "Stacy"}, {"Peter", "Quill"}, {"Gamora", "Whoberi"},
+            {"Nick", "Fury"}, {"Maria", "Hill"}, {"Kamala", "Khan"}, {"Wade", "Wilson"},
+            {"Bruce", "Wayne"}, {"Clark", "Kent"}, {"Diana", "Prince"}, {"Barry", "Allen"},
+            {"Hal", "Jordan"}, {"Arthur", "Curry"}, {"Victor", "Stone"}, {"Dick", "Grayson"},
+            {"Jason", "Todd"}, {"Tim", "Drake"}, {"Damian", "Wayne"}, {"Barbara", "Gordon"},
+            {"Kara", "Zor-El"}, {"Oliver", "Queen"}, {"Dinah", "Lance"}, {"Billy", "Batson"},
+            {"Kate", "Kane"}, {"Selina", "Kyle"}, {"Harvey", "Dent"}, {"Edward", "Nigma"},
+            {"Pamela", "Isley"}, {"Jonathan", "Crane"}, {"Oswald", "Cobblepot"}, {"John", "Constantine"},
+            {"Zatanna", "Zatara"}, {"John", "Stewart"}, {"Kyle", "Rayner"}, {"Wally", "West"},
+            {"Roy", "Harper"}, {"Lois", "Lane"}, {"Jimmy", "Olsen"}, {"Alfred", "Pennyworth"},
+            {"Lucius", "Fox"}, {"Talia", "al Ghul"}, {"Helena", "Bertinelli"}, {"Master", "Chief"},
+            {"Solid", "Snake"}, {"Lara", "Croft"}, {"Nathan", "Drake"}, {"Ellie", "Williams"},
+            {"Joel", "Miller"}, {"Geralt", "Rivia"}, {"Samus", "Aran"}, {"Cloud", "Strife"},
+            {"Tifa", "Lockhart"}, {"Aerith", "Gainsborough"}, {"Squall", "Leonhart"}, {"Leon", "Kennedy"},
+            {"Chris", "Redfield"}, {"Jill", "Valentine"}, {"Ada", "Wong"}, {"Dante", "Sparda"},
+            {"Vergil", "Sparda"}, {"Ryu", "Hoshi"}, {"Ken", "Masters"}, {"Cammy", "White"},
+            {"Rock", "Light"}, {"John", "Shepard"}, {"Garrus", "Vakarian"}, {"Liara", "Tsoni"},
+    };
 
-                // Define connections (e.g., User 1 connects to 2, 3, 4)
-                addConnection(users, "User 1", "User 2");
-                addConnection(users, "User 1", "User 3");
-                addConnection(users, "User 2", "User 5");
-                // Removed connection: User 3 - User 6
-                addConnection(users, "User 4", "User 7");
-                addConnection(users, "User 5", "User 8");
-                addConnection(users, "User 6", "User 9");
-                addConnection(users, "User 7", "User 10");
-                addConnection(users, "User 8", "User 11");
-                addConnection(users, "User 9", "User 12");
-                addConnection(users, "User 10", "User 13");
-                addConnection(users, "User 11", "User 14");
-                addConnection(users, "User 12", "User 15");
-                addConnection(users, "User 13", "User 16");
-                addConnection(users, "User 14", "User 17");
-                // Removed connection: User 15 - User 18
-                addConnection(users, "User 16", "User 19");
-                addConnection(users, "User 17", "User 20");
-                addConnection(users, "User 18", "User 1");
-                addConnection(users, "User 19", "User 2");
-                addConnection(users, "User 20", "User 3");
-                
-                userRepository.saveAll(users);
+    /** Fixed seed so the demo graph's sponsor-tree shape (which member sponsors which) is reproducible across reseeds. */
+    private static final Random SEED_RANDOM = new Random(42L);
+
+    /**
+     * Seed a demo directory spanning several neighborhoods of varying size, so the map isn't
+     * just one or two clusters — enough to see how placement/spacing behaves across a handful
+     * of distinct neighborhoods, and to exercise multi-hop find-path across all of them.
+     * Each seed user gets a login of "user1".."userN" / "password123" purely for local
+     * demo/testing convenience — not a pattern to reuse for real accounts.
+     *
+     * <p>Every non-founder is actually connected to a sponsor (a real accepted Connection, as if
+     * the sponsor request had already been accepted) — this is what production registration
+     * guarantees, and what makes "same neighborhood implies a path exists" hold. The one
+     * exception is deliberate: each neighborhood's last-added member is left with a PENDING
+     * sponsor request instead, so the pending/dashed-line connection visual still has a live
+     * example to render.
+     */
+    @Bean
+    CommandLineRunner initDatabase(UserRepository userRepository,
+                                    UserCredentialsRepository userCredentialsRepository,
+                                    ConnectionRequestRepository connectionRequestRepository,
+                                    ConnectionService connectionService,
+                                    PlacementService placementService,
+                                    PasswordEncoder passwordEncoder) {
+        return args -> {
+            if (userRepository.count() > 0) {
+                return;
+            }
+
+            // First two sizes (10, 10) preserved from the original two-neighborhood seed so
+            // existing usernames/connections below still line up; the rest are new.
+            int[] neighborhoodSizes = {10, 10, 15, 5, 25, 8, 12, 20};
+            List<User> users = new ArrayList<>();
+            int nextNumber = 1;
+            for (int size : neighborhoodSizes) {
+                nextNumber = seedNeighborhood(nextNumber, size, users, placementService, userCredentialsRepository,
+                        connectionRequestRepository, connectionService, passwordEncoder);
+            }
+
+            // Extra hand-picked edges layered on top of the guaranteed sponsor tree, purely for
+            // a richer/denser social graph (multiple routes between members, not just one).
+            // Connections reference users by seed number (1-indexed, matching username "userN"),
+            // not by name — most users past #5 no longer have a generic, uniquely-searchable name.
+            connect(users, connectionService, 1, 2);
+            connect(users, connectionService, 1, 3);
+            connect(users, connectionService, 2, 5);
+            connect(users, connectionService, 4, 7);
+            connect(users, connectionService, 5, 8);
+            connect(users, connectionService, 6, 9);
+            connect(users, connectionService, 7, 10);
+            connect(users, connectionService, 8, 11);
+            connect(users, connectionService, 9, 12);
+            connect(users, connectionService, 10, 13);
+            connect(users, connectionService, 11, 14);
+            connect(users, connectionService, 12, 15);
+            connect(users, connectionService, 13, 16);
+            connect(users, connectionService, 14, 17);
+            connect(users, connectionService, 16, 19);
+            connect(users, connectionService, 17, 20);
+            connect(users, connectionService, 18, 1);
+            connect(users, connectionService, 19, 2);
+            connect(users, connectionService, 20, 3);
+
+            // One bridge connection per neighborhood boundary, chaining all of them together so
+            // find-path has a multi-hop, multi-neighborhood route to actually traverse. Anchored
+            // on each neighborhood's founder (numbers 21, 36, 41, 66, 74, 86) rather than its last
+            // member — the last member of every neighborhood is deliberately the one left with
+            // an unaccepted (pending) sponsor request, so bridging through them would only ever
+            // connect that one isolated straggler, silently leaving the rest of the neighborhood
+            // fragmented from everything past it.
+            connect(users, connectionService, 11, 21);
+            connect(users, connectionService, 21, 36);
+            connect(users, connectionService, 36, 41);
+            connect(users, connectionService, 41, 66);
+            connect(users, connectionService, 66, 74);
+            connect(users, connectionService, 74, 86);
+        };
+    }
+
+    /**
+     * Starter tag dictionary — a small, generic set for the two categories asked for. Adding
+     * more later is just inserting more rows here, no schema change needed. Independent
+     * CommandLineRunner (own guard) so it never touches the delicate user-seeding logic above.
+     */
+    @Bean
+    CommandLineRunner initTags(TagRepository tagRepository) {
+        return args -> {
+            if (tagRepository.count() > 0) {
+                return;
+            }
+            String[] regions = {"North America", "South America", "Europe", "Africa", "Asia", "Oceania"};
+            String[] interests = {"Sports", "Music", "Technology", "Travel", "Reading", "Gaming", "Cooking", "Art"};
+            for (String region : regions) {
+                tagRepository.save(Tag.builder().category("Region").label(region).build());
+            }
+            for (String interest : interests) {
+                tagRepository.save(Tag.builder().category("Interest").label(interest).build());
             }
         };
     }
 
-    private void addConnection(List<User> users, String name1, String name2) {
-        User u1 = users.stream().filter(u -> (u.getFirstName() + " " + u.getLastName()).equals(name1)).findFirst().orElseThrow();
-        User u2 = users.stream().filter(u -> (u.getFirstName() + " " + u.getLastName()).equals(name2)).findFirst().orElseThrow();
-        u1.getRelationships().add(u2.getId().toString());
-        u2.getRelationships().add(u1.getId().toString()); // Bidirectional for graph consistency
+    /**
+     * Founds a new neighborhood at userNumbers[startNumber, startNumber+size). Each joiner
+     * (offset > 0) picks a sponsor pseudo-randomly from whoever has already joined this
+     * neighborhood — an organic branching tree rather than everyone hanging directly off the
+     * founder — and connects to them: accepted for every joiner except the very last, who's
+     * left with a PENDING sponsor request (see class javadoc).
+     */
+    private int seedNeighborhood(int startNumber, int size, List<User> users, PlacementService placementService,
+                                  UserCredentialsRepository userCredentialsRepository,
+                                  ConnectionRequestRepository connectionRequestRepository,
+                                  ConnectionService connectionService, PasswordEncoder passwordEncoder) {
+        List<User> members = new ArrayList<>();
+        for (int offset = 0; offset < size; offset++) {
+            int number = startNumber + offset;
+            String[] name = nameFor(number);
+            User user = User.builder().firstName(name[0]).lastName(name[1]).phoneNumber(String.valueOf(100000000 + number)).build();
+
+            User sponsor = null;
+            if (offset == 0) {
+                user = placementService.foundNeighborhood(user);
+            } else {
+                sponsor = members.get(SEED_RANDOM.nextInt(members.size()));
+                user = placementService.joinNeighborhood(user, sponsor.getNeighborhood());
+            }
+
+            userCredentialsRepository.save(UserCredentials.builder()
+                    .username("user" + number)
+                    .passwordHash(passwordEncoder.encode("password123"))
+                    .user(user)
+                    .build());
+
+            if (sponsor != null) {
+                boolean isLastJoiner = offset == size - 1;
+                if (isLastJoiner) {
+                    connectionRequestRepository.save(ConnectionRequest.builder()
+                            .sender(user)
+                            .receiver(sponsor)
+                            .status(ConnectionRequest.RequestStatus.PENDING)
+                            .isSponsorRequest(true)
+                            .build());
+                } else {
+                    connectionService.connect(user, sponsor);
+                }
+            }
+
+            members.add(user);
+            users.add(user);
+        }
+        return startNumber + size;
+    }
+
+    /** Users 1-5 stay generic ("User N"); 6+ draw from CHARACTER_NAMES, falling back to "User N" if exhausted. */
+    private String[] nameFor(int number) {
+        if (number <= 5) {
+            return new String[]{"User", String.valueOf(number)};
+        }
+        int idx = number - 6;
+        if (idx < CHARACTER_NAMES.length) {
+            return CHARACTER_NAMES[idx];
+        }
+        return new String[]{"User", String.valueOf(number)};
+    }
+
+    private void connect(List<User> users, ConnectionService connectionService, int number1, int number2) {
+        connectionService.connect(users.get(number1 - 1), users.get(number2 - 1));
     }
 }

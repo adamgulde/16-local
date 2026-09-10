@@ -1,14 +1,12 @@
 package com.example.demo;
 
-import com.example.demo.model.User;
+import com.example.demo.dto.AuthResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -33,22 +31,63 @@ public class AuthControllerIT {
     @Autowired
     private TestRestTemplate restTemplate;
 
-    @Test
-    void shouldRegisterAndLoginWithoutPassword() {
-        // Register
-        Map<String, String> regCredentials = Map.of("username", "testuser", "password", "secret");
-        ResponseEntity<User> regResponse = restTemplate.postForEntity("http://localhost:" + port + "/api/auth/register", regCredentials, User.class);
-        
-        assertThat(regResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(regResponse.getBody()).isNotNull();
-        assertThat(regResponse.getBody().getName()).isEqualTo("testuser");
+    private String baseUrl(String path) {
+        return "http://localhost:" + port + path;
+    }
 
-        // Login without password
-        Map<String, String> loginCredentials = Map.of("username", "testuser");
-        ResponseEntity<User> loginResponse = restTemplate.postForEntity("http://localhost:" + port + "/api/auth/login", loginCredentials, User.class);
-        
-        assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(loginResponse.getBody()).isNotNull();
-        assertThat(loginResponse.getBody().getName()).isEqualTo("testuser");
+    @Test
+    void shouldRegisterAndReturnTokenAndUser() {
+        Map<String, String> registerBody = Map.of(
+                "username", "testuser",
+                "password", "secret123",
+                "firstName", "Test",
+                "lastName", "User",
+                "phoneNumber", "5551234567"
+        );
+
+        ResponseEntity<AuthResponse> response = restTemplate.postForEntity(baseUrl("/api/auth/register"), registerBody, AuthResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().token()).isNotBlank();
+        assertThat(response.getBody().user().firstName()).isEqualTo("Test");
+        assertThat(response.getBody().user().lastName()).isEqualTo("User");
+    }
+
+    @Test
+    void shouldRejectLoginWithWrongPassword() {
+        Map<String, String> registerBody = Map.of(
+                "username", "wrongpass",
+                "password", "correct-horse",
+                "firstName", "Wrong",
+                "lastName", "Pass",
+                "phoneNumber", "5550000000"
+        );
+        restTemplate.postForEntity(baseUrl("/api/auth/register"), registerBody, AuthResponse.class);
+
+        Map<String, String> loginBody = Map.of("username", "wrongpass", "password", "not-the-password");
+        ResponseEntity<String> response = restTemplate.postForEntity(baseUrl("/api/auth/login"), loginBody, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void shouldLoginWithCorrectPassword() {
+        Map<String, String> registerBody = Map.of(
+                "username", "rightpass",
+                "password", "correct-horse",
+                "firstName", "Right",
+                "lastName", "Pass",
+                "phoneNumber", "5550000001"
+        );
+        restTemplate.postForEntity(baseUrl("/api/auth/register"), registerBody, AuthResponse.class);
+
+        Map<String, String> loginBody = Map.of("username", "rightpass", "password", "correct-horse");
+        ResponseEntity<AuthResponse> response = restTemplate.postForEntity(baseUrl("/api/auth/login"), loginBody, AuthResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().token()).isNotBlank();
+        assertThat(response.getBody().user().firstName()).isEqualTo("Right");
     }
 }

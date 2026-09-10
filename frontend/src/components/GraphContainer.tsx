@@ -1,227 +1,333 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import { fetchUsers, transformToGraphData } from '../services/userService';
-import { sendRequest, fetchRequests, acceptRequest, findPath } from '../services/requestService';
-import type { User, GraphData } from '../services/userService';
-import type { ConnectionRequest } from '../services/types';
+import { useCallback, useRef, useState } from 'react';
+import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
+import { fullName } from '../services/userService';
+import type { User, Node } from '../services/userService';
+import { useGraphController } from '../graph/useGraphController';
+import {
+  drawNode,
+  drawPathArrow,
+  linkColorFor,
+  linkLineDashFor,
+  paintNodePointerArea,
+  useGraphPhysics,
+} from '../graph/rendering';
+import type { GNode, GLink, LinkExtra } from '../graph/rendering';
 import { UserCard } from './UserCard';
+import { CollapsibleSection } from './CollapsibleSection';
 
 interface GraphContainerProps {
   currentUser: User;
+  onLogout: () => void;
 }
 
-export const GraphContainer = ({ currentUser }: GraphContainerProps) => {
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [requests, setRequests] = useState<ConnectionRequest[]>([]);
-  const fgRef = useRef<any>(null);
-  const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
-  const [highlightLinks, setHighlightLinks] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
+const ZOOM_STEP_FACTOR = 1.6;
 
-  const nodeConnectionCounts = useMemo(() => {
-    const counts: Map<string, number> = new Map();
-    users.forEach(user => {
-      counts.set(user.id, user.relationships.length);
+export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) => {
+  const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
+  const c = useGraphController(currentUser, fgRef);
+
+  const graphResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [graphSize, setGraphSize] = useState({ width: 0, height: 0 });
+
+  // A callback ref (rather than useRef + useEffect) so the observer attaches whenever this
+  // div actually mounts — including when it wasn't present on the very first render because
+  // the component was still showing the loading state.
+  const graphWrapperRef = useCallback((node: HTMLDivElement | null) => {
+    graphResizeObserverRef.current?.disconnect();
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setGraphSize({ width, height });
     });
-    return counts;
-  }, [users]);
+    observer.observe(node);
+    graphResizeObserverRef.current = observer;
+  }, []);
 
-  const filteredGraphData = useMemo(() => {
-    if (!searchTerm) return graphData;
-    const filteredNodes = graphData.nodes.filter(node => node.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-    const filteredLinks = graphData.links.filter(l => 
-        filteredNodeIds.has(typeof l.source === 'string' ? l.source : (l.source as any).id) &&
-        filteredNodeIds.has(typeof l.target === 'string' ? l.target : (l.target as any).id)
+  useGraphPhysics(fgRef, c.graphData.links, c.distanceFromMe);
+
+  if (c.isLoading) {
+    return <div style={{ padding: '2rem' }}>Loading directory...</div>;
+  }
+
+  if (c.initError) {
+    return (
+      <div style={{ padding: '2rem' }}>
+        <p style={{ color: '#ff6b6b' }}>{c.initError}</p>
+        <button onClick={c.loadData}>Retry</button>
+      </div>
     );
-    return { nodes: filteredNodes, links: filteredLinks };
-  }, [graphData, searchTerm]);
-
-  // Helper to interpolate color: 0 connections = Green (#008000), 10+ = Grey (#808080)
-  const getColorForConnections = (count: number) => {
-    const intensity = Math.min(count / 10, 1);
-    const r = Math.round(0 + (128 - 0) * intensity);
-    const g = Math.round(128 + (128 - 128) * intensity);
-    const b = Math.round(0 + (128 - 0) * intensity);
-    return `rgb(${r}, ${g}, ${b})`;
-  };
-
-  const loadData = async () => {
-    const usersData = await fetchUsers();
-    setUsers(usersData);
-    setGraphData(transformToGraphData(usersData));
-    const requestsData = await fetchRequests(currentUser.id);
-    setRequests(requestsData);
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (fgRef.current) {
-      // @ts-ignore
-      fgRef.current.d3Force('charge').strength(-50); // Even less spread out
-      // @ts-ignore
-      fgRef.current.d3Force('link').distance(20); // Closer links
-    }
-  }, [graphData]);
-
-  const myRequests = useMemo(() => {
-    return requests.filter(req => req.sender.id === currentUser.id || req.receiver.id === currentUser.id);
-  }, [requests, currentUser.id]);
-
-  const getRelationshipNames = (relationshipIds: string[]) => {
-    return relationshipIds
-      .map((id) => users.find((u) => u.id === id)?.name)
-      .filter(Boolean) as string[];
-  };
-
-  const updateHighlight = (node: any) => {
-    if (node) {
-      const neighbors = new Set<string>();
-      const links = new Set<string>();
-
-      neighbors.add(node.id);
-      graphData.links.forEach((link) => {
-        const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
-        const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
-        
-        if (sourceId === node.id || targetId === node.id) {
-          links.add(`${sourceId}-${targetId}`);
-          neighbors.add(sourceId);
-          neighbors.add(targetId);
-        }
-      });
-      setHighlightNodes(neighbors);
-      setHighlightLinks(links);
-    } else {
-      setHighlightNodes(new Set());
-      setHighlightLinks(new Set());
-    }
-  };
-
-  const handleFindPath = async (targetId: string) => {
-    const path = await findPath(currentUser.id, targetId);
-    const pathNodes = new Set(path);
-    const pathLinks = new Set<string>();
-    for (let i = 0; i < path.length - 1; i++) {
-        pathLinks.add(`${path[i]}-${path[i+1]}`);
-        pathLinks.add(`${path[i+1]}-${path[i]}`);
-    }
-    setHighlightNodes(pathNodes);
-    setHighlightLinks(pathLinks);
-  };
-
-  const handleSendRequest = async (receiverId: string) => {
-    await sendRequest(currentUser.id, receiverId);
-    loadData(); // Refresh requests
-  };
-
-  const handleAcceptRequest = async (requestId: string) => {
-    await acceptRequest(requestId);
-    loadData(); // Refresh requests and user data
-  };
+  }
 
   return (
     <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', background: '#f0f0f0', display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <input 
-            type="text" 
-            placeholder="Search users..." 
-            value={searchTerm} 
-            onChange={(e) => setSearchTerm(e.target.value)} 
-            style={{ padding: '8px', flex: 1 }}
-        />
-      </div>
-      <div style={{ flex: 1, display: 'flex', position: 'relative' }}>
-        {/* Docked Notification Panel */}
-        <div style={{ 
-            width: '250px', 
-            background: 'white', 
-            borderRight: '1px solid #ccc', 
-            padding: '10px',
-            overflowY: 'auto'
-        }}>
-            <h3>Notifications ({myRequests.length})</h3>
-            {myRequests.map(req => (
-              <div key={req.id} style={{ border: '1px solid #ddd', margin: '5px 0', padding: '10px', borderRadius: '4px' }}>
-                <p><strong>{req.sender.name}</strong> wants to connect</p>
-                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                  <p>Status: {req.status}</p>
-                  {req.status === 'PENDING' && req.receiver.id === currentUser.id && (
-                    <button onClick={() => handleAcceptRequest(req.id)}>Accept</button>
-                  )}
-                </div>
-              </div>
-            ))}
-        </div>
-
-        <div style={{ flex: 1, position: 'relative' }}>
-        <ForceGraph2D
-          ref={fgRef}
-          graphData={filteredGraphData}
-          nodeCanvasObject={(node, ctx, globalScale) => {
-            const isHighlighted = highlightNodes.has(node.id as string);
-            
-            const connectionCount = nodeConnectionCounts.get(node.id as string) ?? 0;
-            const nodeColor = node.id === currentUser.id ? 'blue' : getColorForConnections(connectionCount);
-
-            ctx.beginPath();
-            ctx.arc(node.x!, node.y!, isHighlighted ? 12 : 8, 0, 2 * Math.PI, false);
-            ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
-            ctx.fill();
-
-            const label = (node as any).name;
-            const fontSize = 16 / globalScale;
-            ctx.font = `${fontSize}px Sans-Serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = isHighlighted ? 'red' : 'black';
-            ctx.fillText(label, node.x!, node.y! + 15);
-          }}
-          linkColor={(link: any) => {
-            const sourceId = typeof link.source === 'string' ? link.source : (link.source as any).id;
-            const targetId = typeof link.target === 'string' ? link.target : (link.target as any).id;
-            return highlightLinks.has(`${sourceId}-${targetId}`) || highlightLinks.has(`${targetId}-${sourceId}`)
-              ? 'red'
-              : '#999';
-          }}
-          onNodeClick={(node: any) => {
-            updateHighlight(node);
-            const user = users.find((u) => u.id === node.id);
-            if (user) setSelectedUser(user);
-          }}
-          onBackgroundClick={() => updateHighlight(null)}
-        />
-        
-        {selectedUser && (
-          <UserCard
-            user={selectedUser}
-            relationshipNames={getRelationshipNames(selectedUser.relationships)}
-            onClose={() => {
-              setSelectedUser(null);
-              updateHighlight(null);
+      <div style={{ padding: '10px', background: '#1c1c1e', borderBottom: '1px solid #3a3a40', display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <input
+            type="text"
+            placeholder="Search users..."
+            value={c.searchTerm}
+            onChange={(e) => {
+              c.setSearchTerm(e.target.value);
+              c.setShowSuggestions(true);
             }}
-            onSendRequest={() => handleSendRequest(selectedUser.id)}
-            showSendRequest={selectedUser.id !== currentUser.id && !currentUser.relationships.includes(selectedUser.id)}
-            onFindPath={() => handleFindPath(selectedUser.id)}
-            showFindPath={selectedUser.id !== currentUser.id && !currentUser.relationships.includes(selectedUser.id)}
-            onSelectNode={(nodeId: string) => {
-                const node = filteredGraphData.nodes.find(n => n.id === nodeId);
-                if (node) {
-                    updateHighlight(node);
-                    const user = users.find((u) => u.id === node.id);
-                    if (user) setSelectedUser(user);
-                }
-            }}
-            isCurrentUser={selectedUser.id === currentUser.id}
-            onEdit={() => alert('Edit profile functionality to be implemented')}
+            onFocus={() => c.setShowSuggestions(true)}
+            onBlur={() => c.setShowSuggestions(false)}
+            style={{ padding: '8px', width: '100%', boxSizing: 'border-box' }}
           />
-        )}
+          {c.showSuggestions && c.searchMatches.length > 0 && (
+            <div
+              // Prevent the input's onBlur from firing before the click below registers.
+              onMouseDown={(e) => e.preventDefault()}
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                zIndex: 30,
+                background: '#1c1c1e',
+                border: '1px solid #3a3a40',
+                borderRadius: '4px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.6)',
+                maxHeight: '260px',
+                overflowY: 'auto',
+              }}
+            >
+              {c.searchMatches.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => c.handleSelectSearchResult(u.id)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: '1px solid #3a3a40',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {fullName(u)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        <button
+          onClick={() => c.focusUser(currentUser.id)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: '#6ab0ff' }}
+        >
+          {fullName(currentUser)}
+        </button>
+        <button onClick={onLogout}>Log out</button>
+      </div>
+      {c.actionError && (
+        <div style={{ padding: '8px 10px', background: '#3a1414', color: '#ff6b6b' }}>
+          {c.actionError}
+          <button onClick={() => c.setActionError(null)} style={{ marginLeft: '10px' }}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      <div style={{ flex: 1, display: 'flex', position: 'relative', minHeight: 0 }}>
+        {/* Docked detail panel: the selected user's card, always reserving its width so the
+            canvas never resizes/jumps as selection changes. */}
+        <div style={{ width: '400px', background: '#1c1c1e', borderRight: '1px solid #3a3a40', padding: '14px', overflowY: 'auto', minHeight: 0 }}>
+          {c.selectedUser ? (
+            <UserCard
+              user={c.selectedUser}
+              relationshipNames={c.getRelationshipNames(c.selectedUser.relationships)}
+              onClose={c.clearSelection}
+              onSendRequest={() => c.handleSendRequest(c.selectedUser!.id)}
+              showSendRequest={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+              onFindPath={() => c.handleFindPath(c.selectedUser!.id)}
+              showFindPath={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+              onSelectNode={(nodeId: string) => c.focusUser(nodeId)}
+              isCurrentUser={c.selectedUser.id === currentUser.id}
+            />
+          ) : (
+            <p style={{ color: '#9a9a9a' }}>Select a user on the graph to see their details.</p>
+          )}
+        </div>
+
+        <div ref={graphWrapperRef} style={{ flex: 1, position: 'relative' }}>
+          <ForceGraph2D<Node, LinkExtra>
+            ref={fgRef}
+            width={graphSize.width}
+            height={graphSize.height}
+            graphData={c.graphData}
+            backgroundColor="#000000"
+            nodeCanvasObject={(node, ctx, globalScale) =>
+              drawNode(node, ctx, globalScale, {
+                currentUserId: currentUser.id,
+                distanceFromMe: c.distanceFromMe,
+                highlightNodes: c.highlightNodes,
+                activePath: c.activePath,
+              })
+            }
+            linkColor={(link) =>
+              linkColorFor(link as GLink, { highlightLinks: c.highlightLinks, activePath: c.activePath })
+            }
+            linkLineDash={(link) => linkLineDashFor(link as GLink)}
+            nodePointerAreaPaint={paintNodePointerArea}
+            linkCanvasObjectMode={() => 'after'}
+            linkCanvasObject={(link, ctx, globalScale) =>
+              drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
+            }
+            onNodeClick={(node) => c.selectNode(String(node.id))}
+            onBackgroundClick={c.clearSelection}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 8,
+              left: 8,
+              zIndex: 10,
+              color: '#0f0',
+              background: 'rgba(0,0,0,0.6)',
+              font: '11px monospace',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              pointerEvents: 'none',
+            }}
+          >
+            {c.fps} fps
+          </div>
+        </div>
+
+        {/* Docked accordion: Notifications stacked above View, both collapsible so neither
+            hogs space when the other is what's actually needed. */}
+        <div style={{ width: '280px', background: '#1c1c1e', borderLeft: '1px solid #3a3a40', padding: '0 10px', overflowY: 'auto', minHeight: 0 }}>
+          <CollapsibleSection title="Notifications" badge={c.receivedRequests.length} defaultOpen={false}>
+            <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+              <button
+                onClick={() => c.setRequestsTab('received')}
+                style={{ fontWeight: c.requestsTab === 'received' ? 'bold' : 'normal' }}
+                aria-pressed={c.requestsTab === 'received'}
+              >
+                Incoming ({c.receivedRequests.length})
+              </button>
+              <button
+                onClick={() => c.setRequestsTab('sent')}
+                style={{ fontWeight: c.requestsTab === 'sent' ? 'bold' : 'normal' }}
+                aria-pressed={c.requestsTab === 'sent'}
+              >
+                Outgoing ({c.sentRequests.length})
+              </button>
+            </div>
+            {c.requestsTab === 'received'
+              ? c.receivedRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #3a3a40', margin: '5px 0', padding: '8px 10px', borderRadius: '4px' }}
+                  >
+                    <button
+                      onClick={() => c.focusUser(req.sender.id)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', color: '#6ab0ff', fontWeight: 'bold' }}
+                    >
+                      {fullName(req.sender)}
+                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <button onClick={() => c.handleAcceptRequest(req.id)}>Accept</button>
+                      <button onClick={() => c.handleDeclineRequest(req.id)}>Decline</button>
+                    </div>
+                  </div>
+                ))
+              : c.sentRequests.map((req) => (
+                  <div key={req.id} style={{ textAlign: 'left', border: '1px solid #3a3a40', margin: '5px 0', padding: '8px 10px', borderRadius: '4px' }}>
+                    <button
+                      onClick={() => c.focusUser(req.receiver.id)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', color: '#6ab0ff', fontWeight: 'bold' }}
+                    >
+                      {fullName(req.receiver)}
+                    </button>
+                  </div>
+                ))}
+          </CollapsibleSection>
+
+          <CollapsibleSection title="View" defaultOpen={false}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+              <button onClick={c.handleLocateMe}>Locate Me</button>
+              <button onClick={c.handleGlobalZoom}>Global Zoom</button>
+              <button onClick={() => c.handleZoomStep(ZOOM_STEP_FACTOR)}>Zoom In</button>
+              <button onClick={() => c.handleZoomStep(1 / ZOOM_STEP_FACTOR)}>Zoom Out</button>
+            </div>
+            <label style={{ display: 'block', marginTop: '8px' }}>
+              <input
+                type="checkbox"
+                checked={c.showPendingConnections}
+                onChange={(e) => c.setShowPendingConnections(e.target.checked)}
+              />{' '}
+              Show pending connections
+            </label>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Path">
+            {c.pathBreadcrumb.length > 0 ? (
+              <>
+                <button onClick={c.handleClearPath} style={{ marginBottom: '8px' }}>
+                  Close
+                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                  {c.pathBreadcrumb.map((hop, index) => (
+                    <button
+                      key={hop.id}
+                      onClick={() => c.focusUser(hop.id)}
+                      style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', textDecoration: 'underline', padding: 0, textAlign: 'left' }}
+                    >
+                      {index + 1}. {fullName(hop)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p style={{ margin: 0, color: '#9a9a9a', fontSize: '13px', textAlign: 'left' }}>
+                Find Path on another person to find the fewest connections to them.
+              </p>
+            )}
+          </CollapsibleSection>
+        </div>
+      </div>
+      <div style={{ padding: '10px', background: '#1c1c1e', borderTop: '1px solid #3a3a40', display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '5px' }}>
+          <button
+            onClick={() => c.setViewMode('global')}
+            style={{ fontWeight: c.viewMode === 'global' ? 'bold' : 'normal' }}
+            aria-pressed={c.viewMode === 'global'}
+          >
+            Global View
+          </button>
+          <button
+            onClick={() => c.setViewMode('personal')}
+            style={{ fontWeight: c.viewMode === 'personal' ? 'bold' : 'normal' }}
+            aria-pressed={c.viewMode === 'personal'}
+          >
+            Personal View
+          </button>
+        </div>
+        {c.viewMode === 'personal' && (
+          <>
+            <label>
+              Degree:{' '}
+              <select value={c.degree} onChange={(e) => c.setDegree(Number(e.target.value))}>
+                {[1, 2, 3, 4, 5, 6].map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {c.reachLoading && <span>Calculating...</span>}
+            {c.reachError && <span style={{ color: '#ff6b6b' }}>{c.reachError}</span>}
+            {!c.reachLoading && !c.reachError && c.reach && (
+              <span>
+                <strong>{c.reach.percentage.toFixed(1)}%</strong> of the network ({c.reach.reachableCount} of{' '}
+                {c.reach.totalUsers - 1} other users) is within {c.degree} degree{c.degree > 1 ? 's' : ''} of you
+              </span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

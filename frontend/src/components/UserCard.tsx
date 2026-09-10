@@ -1,4 +1,8 @@
 import type { User } from '../services/userService';
+import { fullName } from '../services/userService';
+import { BioSection } from './BioSection';
+import { TagsAndNotes } from './TagsAndNotes';
+import { dividerStyle, sectionHeaderStyle } from './cardStyles';
 
 interface UserCardProps {
   user: User;
@@ -10,28 +14,80 @@ interface UserCardProps {
   showFindPath?: boolean;
   onSelectNode: (nodeId: string) => void;
   isCurrentUser: boolean;
-  onEdit?: () => void;
 }
 
-export const UserCard = ({ user, relationshipNames, onClose, onSendRequest, showSendRequest, onFindPath, showFindPath, onSelectNode, isCurrentUser, onEdit }: UserCardProps) => {
+const primaryButtonStyle: React.CSSProperties = {
+  background: '#2a5f9e',
+  border: '1px solid #3d8bff',
+  color: 'white',
+  fontWeight: 'bold',
+};
+
+// Name, then Bio, then your own tags/notes on this person, then the — potentially long — public
+// connections list (capped with its own scroll so it can never push everything above it out of
+// view), with the primary action last: by the time you'd click Send Request/Find Path, you've
+// already seen everything about this person that would inform whether to.
+export const UserCard = ({ user, relationshipNames, onClose, onSendRequest, showSendRequest, onFindPath, showFindPath, onSelectNode, isCurrentUser }: UserCardProps) => {
   return (
-    <div className="user-card" style={{ position: 'absolute', top: 10, right: 10, padding: '1rem', background: 'white', border: '1px solid #ccc', borderRadius: '8px', zIndex: 10 }}>
-      <h3>{user.name}</h3>
-      <p>Phone: {user.phoneNumber}</p>
-      <p>Connections:</p>
-      <ul>
+    <div className="user-card" style={{ padding: '16px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>
+            {fullName(user)}
+            {isCurrentUser && ' (you)'}
+          </h2>
+          {user.phoneNumber && <p style={{ margin: '4px 0 0', color: '#9a9a9a', fontSize: '13px' }}>{user.phoneNumber}</p>}
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          style={{ minWidth: 32, minHeight: 32, background: 'none', border: 'none', fontSize: '18px', color: '#9a9a9a', cursor: 'pointer', lineHeight: 1 }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <hr style={dividerStyle} />
+
+      <BioSection subjectId={user.id} bio={user.bio} isCurrentUser={isCurrentUser} />
+
+      <hr style={dividerStyle} />
+
+      <TagsAndNotes subjectId={user.id} isCurrentUser={isCurrentUser} />
+
+      <hr style={dividerStyle} />
+
+      <p style={sectionHeaderStyle}>Connections ({user.relationships.length})</p>
+      <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
         {user.relationships.map((relId, index) => (
-            <li key={relId}>
-                <button onClick={() => onSelectNode(relId)} style={{ background: 'none', border: 'none', color: 'blue', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {relationshipNames[index]}
-                </button>
-            </li>
+          <button
+            key={relId}
+            onClick={() => onSelectNode(relId)}
+            style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', textDecoration: 'underline', padding: '2px 0', textAlign: 'left' }}
+          >
+            {relationshipNames[index]}
+          </button>
         ))}
-      </ul>
-      {showSendRequest && <button onClick={onSendRequest}>Send Connection Request</button>}
-      {showFindPath && <button onClick={onFindPath}>Find Path</button>}
-      {isCurrentUser && <button onClick={onEdit}>Edit Profile</button>}
-      <button onClick={onClose}>Close</button>
+        {user.relationships.length === 0 && <span style={{ color: '#9a9a9a' }}>None yet</span>}
+      </div>
+
+      {(showSendRequest || showFindPath) && (
+        <>
+          <hr style={dividerStyle} />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {showSendRequest && (
+              <button onClick={onSendRequest} style={primaryButtonStyle}>
+                Send Connection Request
+              </button>
+            )}
+            {showFindPath && (
+              <button onClick={onFindPath} style={primaryButtonStyle}>
+                Find Path
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

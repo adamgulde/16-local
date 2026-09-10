@@ -1,19 +1,19 @@
 package com.example.demo.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.UUID;
 
 @Entity
 @Table(name = "connection_requests")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(of = "id")
+@ToString(of = {"id", "status"})
 public class ConnectionRequest {
 
     @Id
@@ -30,6 +30,9 @@ public class ConnectionRequest {
 
     @Enumerated(EnumType.STRING)
     private RequestStatus status;
+
+    @Builder.Default
+    private boolean isSponsorRequest = false;
 
     public enum RequestStatus {
         PENDING, ACCEPTED, REJECTED

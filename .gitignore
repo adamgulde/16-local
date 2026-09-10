@@ -12,12 +12,16 @@ dist/
 build/
 **/build/
 out/
+.gradle/
 
 # IDE/System files
 .vscode/
 .idea/
 .DS_Store
 *.log
+
+# Claude Code session artifacts
+.claude/
 
 # Docker
 postgres_data/

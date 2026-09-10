@@ -1,5 +1,3 @@
-import type { User } from './userService';
-
 export const RequestStatus = {
   PENDING: 'PENDING',
   ACCEPTED: 'ACCEPTED',
@@ -8,9 +6,17 @@ export const RequestStatus = {
 
 export type RequestStatus = typeof RequestStatus[keyof typeof RequestStatus];
 
+// Deliberately not the full User shape — a notification row never carries phone number or
+// relationships, regardless of connection status (see backend UserSummary).
+export interface UserSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface ConnectionRequest {
   id: string;
-  sender: User;
-  receiver: User;
+  sender: UserSummary;
+  receiver: UserSummary;
   status: RequestStatus;
 }

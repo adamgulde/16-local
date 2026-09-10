@@ -1,22 +1,19 @@
 package com.example.demo.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import lombok.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
-@Data
+@Table(name = "users", indexes = @Index(name = "idx_users_map_index", columnList = "mapIndex"))
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(of = "id")
+@ToString(of = {"id", "firstName", "lastName"})
 public class User {
 
     @Id
@@ -28,7 +25,19 @@ public class User {
 
     private String phoneNumber;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private List<String> relationships;
+    @Column(length = 2000)
+    private String bio;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "neighborhood_curve_index")
+    private Neighborhood neighborhood;
+
+    /** This user's join order within their neighborhood — the low-order bits of mapIndex. */
+    private Long localIndex;
+
+    /** The single combined Hilbert index this user is placed at; see HilbertCurve. */
+    private Long mapIndex;
+
+    private Long mapX;
+    private Long mapY;
 }
