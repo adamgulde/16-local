@@ -16,7 +16,9 @@ public record UserResponse(
         String lastName,
         String phoneNumber,
         String bio,
-        List<UUID> relationships
+        List<UUID> relationships,
+        String inviteCode,
+        Integer maxConnectionDegree
 ) {
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber) {
         return new UserResponse(
@@ -25,7 +27,9 @@ public record UserResponse(
                 user.getLastName(),
                 includePhoneNumber ? user.getPhoneNumber() : null,
                 user.getBio() == null ? "" : user.getBio(),
-                relationships
+                relationships,
+                user.getInviteCode(),
+                user.getMaxConnectionDegree()
         );
     }
 }

@@ -30,8 +30,12 @@ public class UserController {
     }
 
     @GetMapping("/search")
-    public List<SearchResult> searchUsers(@RequestParam String q, @AuthenticationPrincipal UUID requestingUserId) {
-        return userService.searchUsers(q, requestingUserId);
+    public List<SearchResult> searchUsers(
+            @RequestParam String q,
+            @RequestParam(required = false, defaultValue = "true") boolean searchNames,
+            @RequestParam(required = false, defaultValue = "true") boolean searchTags,
+            @AuthenticationPrincipal UUID requestingUserId) {
+        return userService.searchUsers(q, searchNames, searchTags, requestingUserId);
     }
 
     @GetMapping("/{id}")
@@ -66,6 +70,23 @@ public class UserController {
             throw new BadRequestException("You can only delete your own account");
         }
         userService.deleteUser(id);
+    }
+
+    @DeleteMapping("/{id}/connection")
+    public ResponseEntity<Void> disconnect(@PathVariable UUID id, @AuthenticationPrincipal UUID requestingUserId) {
+        if (id.equals(requestingUserId)) {
+            throw new BadRequestException("Cannot disconnect from yourself");
+        }
+        connectionService.disconnect(requestingUserId, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/me/auto-reject")
+    public ResponseEntity<Void> updateAutoReject(@RequestBody Map<String, Integer> body,
+                                                  @AuthenticationPrincipal UUID requestingUserId) {
+        Integer maxDegree = body.get("maxConnectionDegree");
+        userService.updateMaxConnectionDegree(requestingUserId, maxDegree);
+        return ResponseEntity.noContent().build();
     }
 
     /**

@@ -43,14 +43,13 @@ public class TagService {
     }
 
     public TagAssignmentResponse addTag(UUID subjectId, UUID taggerId, UUID tagId, String customLabel) {
+        if (!taggerId.equals(subjectId)) {
+            throw new BadRequestException("Users can only tag themselves");
+        }
         User subject = userService.getUserById(subjectId);
-        User tagger = userService.getUserById(taggerId);
-        boolean isSelfTag = taggerId.equals(subjectId);
+        User tagger = subject;
         String normalizedCustomLabel = customLabel == null || customLabel.isBlank() ? null : customLabel.trim();
 
-        if (isSelfTag && normalizedCustomLabel != null) {
-            throw new BadRequestException("Self-tags must come from the tag dictionary, not a custom label");
-        }
         if (tagId == null && normalizedCustomLabel == null) {
             throw new BadRequestException("Provide either a tagId or a customLabel");
         }

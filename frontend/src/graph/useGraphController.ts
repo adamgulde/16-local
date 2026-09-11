@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
-import { fetchUsers, transformToGraphData, fullName, fetchReach } from '../services/userService';
+import { fetchUsers, transformToGraphData, fullName, fetchReach, disconnectUser, updateAutoRejectSetting, searchUsersApi } from '../services/userService';
 import type { User, ReachResponse } from '../services/userService';
 import { sendRequest, fetchMyRequests, acceptRequest, declineRequest, findPath } from '../services/requestService';
 import { extractErrorMessage } from '../services/apiClient';
@@ -52,6 +52,12 @@ export const useGraphController = (
   const [showPendingConnections, setShowPendingConnections] = useState(false);
   const [requestsTab, setRequestsTab] = useState<'received' | 'sent'>('received');
 
+  const [maxDistance, setMaxDistance] = useState<number>(Infinity);
+  const [searchNames, setSearchNames] = useState(true);
+  const [searchTags, setSearchTags] = useState(true);
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [autoRejectDegree, setAutoRejectDegree] = useState<number | null>(currentUser.maxConnectionDegree ?? null);
+
   const distanceFromMe = useMemo(() => computeDistanceFromMe(users, currentUser.id), [users, currentUser.id]);
 
   // Confirmed connections come straight off each user's relationships. Pending ones are only
@@ -76,13 +82,33 @@ export const useGraphController = (
     return { nodes: baseGraphData.nodes, links: [...baseGraphData.links, ...pendingLinks] };
   }, [baseGraphData, requests, showPendingConnections]);
 
-  // Search is a name lookup, not a filter — the graph always shows everyone; typing just
-  // narrows a dropdown of candidates to jump to.
-  const searchMatches = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return [];
-    return users.filter((u) => fullName(u).toLowerCase().includes(term)).slice(0, 8);
-  }, [users, searchTerm]);
+  // Search with debounce across names and/or tags based on checkboxes
+  const [searchMatches, setSearchMatches] = useState<User[]>([]);
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term || (!searchNames && !searchTags)) {
+      setSearchMatches([]);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      searchUsersApi(term, searchNames, searchTags)
+        .then((results) => {
+          if (active) setSearchMatches(results.slice(0, 8));
+        })
+        .catch(() => {
+          if (active && searchNames) {
+            const lower = term.toLowerCase();
+            setSearchMatches(users.filter((u) => fullName(u).toLowerCase().includes(lower)).slice(0, 8));
+          }
+        });
+    }, 200);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchTerm, searchNames, searchTags, users]);
 
   // Only PENDING requests are actionable/notification-worthy — once accepted or declined
   // (by either party), the outcome is already reflected elsewhere (the graph connection, or
@@ -372,6 +398,36 @@ export const useGraphController = (
     [loadData]
   );
 
+  const handleDisconnect = useCallback(
+    async (targetUserId: string) => {
+      setActionError(null);
+      try {
+        await disconnectUser(targetUserId);
+        await loadData();
+        if (selectedUser?.id === targetUserId) {
+          setSelectedUser(null);
+          clearSelection();
+        }
+      } catch {
+        setActionError('Could not disconnect user.');
+      }
+    },
+    [loadData, selectedUser, clearSelection]
+  );
+
+  const handleUpdateAutoReject = useCallback(
+    async (degreeLimit: number | null) => {
+      setActionError(null);
+      try {
+        await updateAutoRejectSetting(degreeLimit);
+        setAutoRejectDegree(degreeLimit);
+      } catch {
+        setActionError('Could not update auto-reject setting.');
+      }
+    },
+    []
+  );
+
   // Escape (or a mobile "back"/close affordance calling the same setter) closes whatever's
   // currently "open," most-transient first: the search dropdown, then the selected-user card,
   // then an open find-path result.
@@ -416,6 +472,15 @@ export const useGraphController = (
     setSearchTerm,
     showSuggestions,
     setShowSuggestions,
+    searchNames,
+    setSearchNames,
+    searchTags,
+    setSearchTags,
+    maxDistance,
+    setMaxDistance,
+    selectedTagFilter,
+    setSelectedTagFilter,
+    autoRejectDegree,
     isLoading,
     initError,
     actionError,
@@ -446,6 +511,8 @@ export const useGraphController = (
     handleSendRequest,
     handleAcceptRequest,
     handleDeclineRequest,
+    handleDisconnect,
+    handleUpdateAutoReject,
   };
 };
 

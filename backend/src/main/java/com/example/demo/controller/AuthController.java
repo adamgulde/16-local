@@ -1,15 +1,8 @@
 package com.example.demo.controller;
 
-import com.example.demo.dto.AuthResponse;
-import com.example.demo.dto.LoginRequest;
-import com.example.demo.dto.RegisterRequest;
-import com.example.demo.dto.UserResponse;
+import com.example.demo.dto.*;
 import com.example.demo.exception.BadRequestException;
-import com.example.demo.model.ConnectionRequest;
 import com.example.demo.model.User;
-import com.example.demo.model.UserCredentials;
-import com.example.demo.repository.ConnectionRequestRepository;
-import com.example.demo.repository.UserCredentialsRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.AuthTokenService;
 import com.example.demo.service.ConnectionService;
@@ -19,9 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,103 +25,197 @@ import java.util.UUID;
 public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+    private static final String INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private final SecureRandom secureRandom = new SecureRandom();
 
     private final UserRepository userRepository;
-    private final UserCredentialsRepository userCredentialsRepository;
-    private final ConnectionRequestRepository connectionRequestRepository;
     private final AuthTokenService authTokenService;
     private final ConnectionService connectionService;
     private final PlacementService placementService;
-    private final PasswordEncoder passwordEncoder;
     private final OtpService otpService;
 
-    @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
-        if (isBlank(request.username()) || isBlank(request.password())) {
-            throw new BadRequestException("Username and password are required");
+    @PostMapping("/signin/initiate-otp")
+    public ResponseEntity<Void> initiateSignInOtp(@RequestBody InitiateOtpRequest request) {
+        String phone = cleanPhone(request.phoneNumber());
+        if (isBlank(phone)) {
+            throw new BadRequestException("Phone number is required");
         }
-        if (userCredentialsRepository.findByUsername(request.username()).isPresent()) {
-            throw new BadRequestException("Username already exists");
+        if (!userRepository.existsByPhoneNumber(phone)) {
+            throw new BadRequestException("No account found with this phone number. Please sign up.");
         }
-
-        User user = User.builder()
-                .firstName(request.firstName())
-                .lastName(request.lastName())
-                .phoneNumber(request.phoneNumber())
-                .build();
-
-        User sponsor = null;
-        if (isBlank(request.sponsorUsername())) {
-            user = placementService.foundNeighborhood(user);
-        } else {
-            sponsor = userCredentialsRepository.findByUsername(request.sponsorUsername())
-                    .map(UserCredentials::getUser)
-                    .orElseThrow(() -> new BadRequestException("Sponsor not found"));
-            user = placementService.joinNeighborhood(user, sponsor.getNeighborhood());
-        }
-
-        UserCredentials credentials = UserCredentials.builder()
-                .username(request.username())
-                .passwordHash(passwordEncoder.encode(request.password()))
-                .user(user)
-                .build();
-        userCredentialsRepository.save(credentials);
-
-        if (sponsor != null) {
-            ConnectionRequest sponsorRequest = ConnectionRequest.builder()
-                    .sender(user)
-                    .receiver(sponsor)
-                    .status(ConnectionRequest.RequestStatus.PENDING)
-                    .isSponsorRequest(true)
-                    .build();
-            connectionRequestRepository.save(sponsorRequest);
-        }
-
-        log.info("Registered new user {} ({})", user.getId(), request.username());
-
-        String token = authTokenService.issueToken(user);
-        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, List.of(), true)));
+        otpService.sendOtp(phone);
+        log.info("Sent sign-in OTP to {}", phone);
+        return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        if (isBlank(request.username()) || isBlank(request.password())) {
-            throw new BadRequestException("Username and password are required");
+    @PostMapping("/signin/verify-otp")
+    public ResponseEntity<AuthResponse> verifySignInOtp(@RequestBody VerifyOtpRequest request) {
+        String phone = cleanPhone(request.phoneNumber());
+        String code = clean(request.code());
+        if (isBlank(phone) || isBlank(code)) {
+            throw new BadRequestException("Phone number and verification code are required");
+        }
+        if (!otpService.verifyOtp(phone, code)) {
+            throw new BadRequestException("Invalid or expired verification code");
         }
 
-        UserCredentials credentials = userCredentialsRepository.findByUsername(request.username())
-                .orElseThrow(() -> new BadRequestException("Invalid username or password"));
+        User user = userRepository.findByPhoneNumber(phone)
+                .orElseThrow(() -> new BadRequestException("User not found"));
 
-        if (!passwordEncoder.matches(request.password(), credentials.getPasswordHash())) {
-            log.warn("Failed login attempt for username {}", request.username());
-            throw new BadRequestException("Invalid username or password");
-        }
-
-        User user = credentials.getUser();
-        log.info("User {} logged in", user.getId());
+        log.info("User {} logged in via OTP", user.getId());
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
     }
 
+    @PostMapping("/signup/initiate-otp")
+    public ResponseEntity<Void> initiateSignUpOtp(@RequestBody InitiateOtpRequest request) {
+        String phone = cleanPhone(request.phoneNumber());
+        if (isBlank(phone)) {
+            throw new BadRequestException("Phone number is required");
+        }
+        if (userRepository.existsByPhoneNumber(phone)) {
+            throw new BadRequestException("An account with this phone number already exists. Please sign in.");
+        }
+
+        if (!isBlank(request.inviteCode())) {
+            String code = request.inviteCode().trim().toUpperCase();
+            if (!userRepository.existsByInviteCode(code)) {
+                throw new BadRequestException("Invalid invite code");
+            }
+        }
+
+        otpService.sendOtp(phone);
+        log.info("Sent sign-up OTP to {}", phone);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+        String phone = cleanPhone(request.phoneNumber());
+        String code = clean(request.code());
+        String firstName = clean(request.firstName());
+        String lastName = clean(request.lastName());
+
+        if (isBlank(phone) || isBlank(code) || isBlank(firstName) || isBlank(lastName)) {
+            throw new BadRequestException("Phone number, verification code, first name, and last name are required");
+        }
+
+        if (userRepository.existsByPhoneNumber(phone)) {
+            throw new BadRequestException("An account with this phone number already exists. Please sign in.");
+        }
+
+        if (!otpService.verifyOtp(phone, code)) {
+            throw new BadRequestException("Invalid or expired verification code");
+        }
+
+        User inviter = null;
+        if (!isBlank(request.inviteCode())) {
+            String inviteCode = request.inviteCode().trim().toUpperCase();
+            inviter = userRepository.findByInviteCode(inviteCode)
+                    .orElseThrow(() -> new BadRequestException("Invalid invite code"));
+        }
+
+        String uniqueInviteCode = generateUniqueInviteCode();
+        User user = User.builder()
+                .firstName(firstName)
+                .lastName(lastName)
+                .phoneNumber(phone)
+                .inviteCode(uniqueInviteCode)
+                .createdAt(Instant.now())
+                .build();
+
+        if (inviter != null) {
+            user = placementService.joinNeighborhood(user, inviter.getNeighborhood());
+            userRepository.save(user);
+            connectionService.connect(user, inviter);
+            log.info("User {} auto-connected to inviter {}", user.getId(), inviter.getId());
+        } else {
+            user = placementService.foundNeighborhood(user);
+            userRepository.save(user);
+        }
+
+        log.info("Registered new user {} with invite code {}", user.getId(), uniqueInviteCode);
+        String token = authTokenService.issueToken(user);
+        List<UUID> relationships = connectionService.getNeighborIds(user.getId());
+        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+    }
+
+    @GetMapping("/validate-invite")
+    public ResponseEntity<InviteCodeValidationResponse> validateInvite(@RequestParam(required = false) String code) {
+        if (isBlank(code)) {
+            return ResponseEntity.ok(new InviteCodeValidationResponse(false, null));
+        }
+        return userRepository.findByInviteCode(code.trim().toUpperCase())
+                .map(inviter -> ResponseEntity.ok(new InviteCodeValidationResponse(true, inviter.getFirstName() + " " + inviter.getLastName())))
+                .orElseGet(() -> ResponseEntity.ok(new InviteCodeValidationResponse(false, null)));
+    }
+
     @PostMapping("/initiate-otp")
-    public ResponseEntity<Void> initiateOtp(@RequestBody String phoneNumber) {
-        otpService.sendOtp(phoneNumber);
+    public ResponseEntity<Void> initiateOtp(@RequestBody(required = false) InitiateOtpRequest request,
+                                             @RequestParam(required = false) String phoneNumber) {
+        String phone = cleanPhone(request != null && request.phoneNumber() != null ? request.phoneNumber() : phoneNumber);
+        if (isBlank(phone)) {
+            throw new BadRequestException("Phone number is required");
+        }
+        otpService.sendOtp(phone);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/verify-otp")
-    public ResponseEntity<AuthResponse> verifyOtp(@RequestParam String phoneNumber, @RequestParam String code) {
-        if (!otpService.verifyOtp(phoneNumber, code)) {
+    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody(required = false) VerifyOtpRequest request,
+                                                  @RequestParam(required = false) String phoneNumber,
+                                                  @RequestParam(required = false) String code) {
+        String phone = cleanPhone(request != null && request.phoneNumber() != null ? request.phoneNumber() : phoneNumber);
+        String c = request != null && request.code() != null ? request.code() : code;
+        if (isBlank(phone) || isBlank(c)) {
+            throw new BadRequestException("Phone number and verification code are required");
+        }
+        if (!otpService.verifyOtp(phone, clean(c))) {
             throw new BadRequestException("Invalid or expired OTP");
         }
-        
-        User user = userRepository.findByPhoneNumber(phoneNumber)
+
+        User user = userRepository.findByPhoneNumber(phone)
                 .orElseThrow(() -> new BadRequestException("User not found"));
-                
+
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+    }
+
+    private String generateUniqueInviteCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            StringBuilder sb = new StringBuilder(6);
+            for (int i = 0; i < 6; i++) {
+                sb.append(INVITE_CHARS.charAt(secureRandom.nextInt(INVITE_CHARS.length())));
+            }
+            String code = sb.toString();
+            if (!userRepository.existsByInviteCode(code)) {
+                return code;
+            }
+        }
+        return UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+
+    private String clean(String s) {
+        return s == null ? null : s.trim();
+    }
+
+    private String cleanPhone(String phone) {
+        if (phone == null) return null;
+        String trimmed = phone.trim();
+        if (trimmed.isEmpty()) return null;
+        String digits = trimmed.replaceAll("\\D", "");
+        if (digits.startsWith("1") && digits.length() == 11) {
+            digits = digits.substring(1);
+        }
+        if (digits.length() == 10) {
+            return String.format("+1 %s-%s-%s",
+                    digits.substring(0, 3),
+                    digits.substring(3, 6),
+                    digits.substring(6));
+        }
+        return trimmed;
     }
 
     private boolean isBlank(String s) {

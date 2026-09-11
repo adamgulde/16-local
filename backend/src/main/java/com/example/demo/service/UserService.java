@@ -20,6 +20,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final ConnectionService connectionService;
+    private final com.example.demo.repository.UserTagRepository userTagRepository;
 
     public User getUserById(UUID id) {
         return userRepository.findById(id)
@@ -45,25 +46,33 @@ public class UserService {
         return UserResponse.from(user, relationships, isSelf || isConnection);
     }
 
-    /**
-     * Case-insensitive search over first name, last name, or "first last"
-     * concatenation. Each hit comes back with its own direct connections so
-     * the frontend can render a small neighborhood around it without a
-     * separate round-trip.
-     */
     public List<SearchResult> searchUsers(String query, UUID requestingUserId) {
-        if (query == null || query.isBlank()) {
+        return searchUsers(query, true, true, requestingUserId);
+    }
+
+    /**
+     * Search over names and/or tags according to options.
+     */
+    public List<SearchResult> searchUsers(String query, boolean searchNames, boolean searchTags, UUID requestingUserId) {
+        if (query == null || query.isBlank() || (!searchNames && !searchTags)) {
             return List.of();
         }
         String trimmed = query.trim();
+        List<User> candidates = new ArrayList<>();
 
-        List<User> candidates = new ArrayList<>(userRepository
-                .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase(trimmed, trimmed));
-
-        String[] parts = trimmed.split("\\s+", 2);
-        if (parts.length == 2) {
+        if (searchNames) {
             candidates.addAll(userRepository
-                    .findByFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(parts[0], parts[1]));
+                    .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase(trimmed, trimmed));
+
+            String[] parts = trimmed.split("\\s+", 2);
+            if (parts.length == 2) {
+                candidates.addAll(userRepository
+                        .findByFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(parts[0], parts[1]));
+            }
+        }
+
+        if (searchTags) {
+            candidates.addAll(userTagRepository.findSubjectsByTagQuery(trimmed));
         }
 
         return candidates.stream()
@@ -97,6 +106,12 @@ public class UserService {
 
     public void deleteUser(UUID id) {
         userRepository.deleteById(id);
+    }
+
+    public void updateMaxConnectionDegree(UUID id, Integer maxDegree) {
+        User user = getUserById(id);
+        user.setMaxConnectionDegree(maxDegree);
+        userRepository.save(user);
     }
 
     public long countUsers() {

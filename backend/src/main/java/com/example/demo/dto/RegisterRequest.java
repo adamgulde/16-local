@@ -1,11 +1,10 @@
 package com.example.demo.dto;
 
 public record RegisterRequest(
-        String username,
-        String password,
+        String phoneNumber,
+        String code,
         String firstName,
         String lastName,
-        String phoneNumber,
-        String sponsorUsername
+        String inviteCode
 ) {
 }

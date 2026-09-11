@@ -3,10 +3,8 @@ package com.example.demo;
 import com.example.demo.model.ConnectionRequest;
 import com.example.demo.model.Tag;
 import com.example.demo.model.User;
-import com.example.demo.model.UserCredentials;
 import com.example.demo.repository.ConnectionRequestRepository;
 import com.example.demo.repository.TagRepository;
-import com.example.demo.repository.UserCredentialsRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.ConnectionService;
 import com.example.demo.service.PlacementService;
@@ -14,7 +12,6 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,11 +76,9 @@ public class DemoApplication {
      */
     @Bean
     CommandLineRunner initDatabase(UserRepository userRepository,
-                                    UserCredentialsRepository userCredentialsRepository,
                                     ConnectionRequestRepository connectionRequestRepository,
                                     ConnectionService connectionService,
-                                    PlacementService placementService,
-                                    PasswordEncoder passwordEncoder) {
+                                    PlacementService placementService) {
         return args -> {
             if (userRepository.count() > 0) {
                 return;
@@ -95,8 +90,8 @@ public class DemoApplication {
             List<User> users = new ArrayList<>();
             int nextNumber = 1;
             for (int size : neighborhoodSizes) {
-                nextNumber = seedNeighborhood(nextNumber, size, users, placementService, userCredentialsRepository,
-                        connectionRequestRepository, connectionService, passwordEncoder);
+                nextNumber = seedNeighborhood(nextNumber, size, users, placementService,
+                        connectionRequestRepository, connectionService);
             }
 
             // Extra hand-picked edges layered on top of the guaranteed sponsor tree, purely for
@@ -169,14 +164,19 @@ public class DemoApplication {
      * left with a PENDING sponsor request (see class javadoc).
      */
     private int seedNeighborhood(int startNumber, int size, List<User> users, PlacementService placementService,
-                                  UserCredentialsRepository userCredentialsRepository,
                                   ConnectionRequestRepository connectionRequestRepository,
-                                  ConnectionService connectionService, PasswordEncoder passwordEncoder) {
+                                  ConnectionService connectionService) {
         List<User> members = new ArrayList<>();
         for (int offset = 0; offset < size; offset++) {
             int number = startNumber + offset;
             String[] name = nameFor(number);
-            User user = User.builder().firstName(name[0]).lastName(name[1]).phoneNumber(String.valueOf(100000000 + number)).build();
+            User user = User.builder()
+                    .firstName(name[0])
+                    .lastName(name[1])
+                    .phoneNumber(String.format("+1 555-000-%04d", number))
+                    .inviteCode("INV" + String.format("%04d", number))
+                    .createdAt(java.time.Instant.now())
+                    .build();
 
             User sponsor = null;
             if (offset == 0) {
@@ -186,12 +186,6 @@ public class DemoApplication {
                 user = placementService.joinNeighborhood(user, sponsor.getNeighborhood());
             }
 
-            userCredentialsRepository.save(UserCredentials.builder()
-                    .username("user" + number)
-                    .passwordHash(passwordEncoder.encode("password123"))
-                    .user(user)
-                    .build());
-
             if (sponsor != null) {
                 boolean isLastJoiner = offset == size - 1;
                 if (isLastJoiner) {
@@ -199,7 +193,6 @@ public class DemoApplication {
                             .sender(user)
                             .receiver(sponsor)
                             .status(ConnectionRequest.RequestStatus.PENDING)
-                            .isSponsorRequest(true)
                             .build());
                 } else {
                     connectionService.connect(user, sponsor);

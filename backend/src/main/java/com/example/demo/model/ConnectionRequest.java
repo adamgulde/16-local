@@ -31,8 +31,6 @@ public class ConnectionRequest {
     @Enumerated(EnumType.STRING)
     private RequestStatus status;
 
-    @Builder.Default
-    private boolean isSponsorRequest = false;
 
     public enum RequestStatus {
         PENDING, ACCEPTED, REJECTED

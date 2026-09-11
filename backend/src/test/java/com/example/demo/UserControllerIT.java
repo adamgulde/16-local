@@ -40,14 +40,25 @@ public class UserControllerIT {
         return "http://localhost:" + port + path;
     }
 
-    private AuthResponse register(String username, String firstName, String lastName) {
-        Map<String, String> body = Map.of(
-                "username", username,
-                "password", "secret123",
-                "firstName", firstName,
-                "lastName", lastName,
-                "phoneNumber", "5559990000"
-        );
+    @Autowired
+    private com.example.demo.repository.OtpRepository otpRepository;
+    private static final java.util.concurrent.atomic.AtomicInteger phoneSeq = new java.util.concurrent.atomic.AtomicInteger(1000);
+
+    private static String cleanPhone(String phone) {
+        if (phone == null) return null;
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.startsWith("1") && digits.length() == 11) digits = digits.substring(1);
+        if (digits.length() == 10) return String.format("+1 %s-%s-%s", digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));
+        return phone;
+    }
+
+    private AuthResponse register(String identifier, String firstName, String lastName) {
+        String phone = "555888" + phoneSeq.incrementAndGet();
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new com.example.demo.dto.InitiateOtpRequest(phone, null), Void.class);
+        String code = otpRepository.findByPhoneNumber(cleanPhone(phone)).orElseThrow().getCode();
+        com.example.demo.dto.RegisterRequest body = new com.example.demo.dto.RegisterRequest(
+                phone, code, firstName, lastName, null);
         return restTemplate.postForEntity(baseUrl("/api/auth/register"), body, AuthResponse.class).getBody();
     }
 

@@ -117,4 +117,38 @@ public class ConnectionService {
         visited.remove(startId);
         return visited.size();
     }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void disconnect(UUID userId1, UUID userId2) {
+        UUID first = userId1.compareTo(userId2) < 0 ? userId1 : userId2;
+        UUID second = userId1.compareTo(userId2) < 0 ? userId2 : userId1;
+        connectionRepository.findByUserAIdAndUserBId(first, second)
+                .ifPresent(connectionRepository::delete);
+    }
+
+    /** Returns BFS degree distance between startId and targetId (1 for direct, 2 for 2nd degree, etc., Integer.MAX_VALUE if unreachable). */
+    public int getDegreeDistance(UUID startId, UUID targetId) {
+        if (startId.equals(targetId)) return 0;
+        Map<UUID, List<UUID>> adjacency = buildAdjacency();
+        Queue<UUID> queue = new LinkedList<>();
+        Map<UUID, Integer> dist = new HashMap<>();
+
+        queue.add(startId);
+        dist.put(startId, 0);
+
+        while (!queue.isEmpty()) {
+            UUID current = queue.poll();
+            int d = dist.get(current);
+            for (UUID neighbor : adjacency.getOrDefault(current, List.of())) {
+                if (neighbor.equals(targetId)) {
+                    return d + 1;
+                }
+                if (!dist.containsKey(neighbor)) {
+                    dist.put(neighbor, d + 1);
+                    queue.add(neighbor);
+                }
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
 }

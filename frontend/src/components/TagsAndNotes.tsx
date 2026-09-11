@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { fetchAllTags, fetchTagsForUser, addTagToUser, removeTagFromUser } from '../services/tagService';
 import type { Tag, TagAssignment } from '../services/tagService';
 import { fetchNote, saveNote } from '../services/noteService';
 import { dividerStyle, sectionHeaderStyle } from './cardStyles';
+import { CloseIcon } from './Icons';
 
 interface TagsAndNotesProps {
   subjectId: string;
   isCurrentUser: boolean;
 }
 
-const pillStyle = (filled: boolean): React.CSSProperties => ({
+const pillStyle = (filled: boolean): CSSProperties => ({
   display: 'inline-flex',
   alignItems: 'center',
   gap: '4px',
@@ -22,9 +23,7 @@ const pillStyle = (filled: boolean): React.CSSProperties => ({
 });
 
 // Self-tags (isSelfTag) are public declarations — anyone viewing this card sees them, filled
-// in. Private tags (isMine) are ones the current viewer placed on this person themselves, and
-// are the only other kind this card can ever show (the backend never returns a third party's
-// private tag) — outlined, with a remove "x" since only the tagger can ever remove their own.
+// in. Users can only tag themselves (both dictionary tags and custom user-generated tags).
 export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) => {
   const [tags, setTags] = useState<TagAssignment[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -64,7 +63,8 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
   }, [tagInput, allTags, appliedLabels]);
 
   const exactDictionaryMatch = allTags.some((t) => t.label.toLowerCase() === tagInput.trim().toLowerCase());
-  const canAddCustom = !isCurrentUser && tagInput.trim().length > 0 && !exactDictionaryMatch && !appliedLabels.has(tagInput.trim().toLowerCase());
+  // Users can only tag themselves: allow custom tags if user is current user
+  const canAddCustom = isCurrentUser && tagInput.trim().length > 0 && !exactDictionaryMatch && !appliedLabels.has(tagInput.trim().toLowerCase());
 
   const handleAddDictionaryTag = async (tag: Tag) => {
     setTagError(null);
@@ -119,71 +119,75 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
         {tags.map((t) => (
           <span key={t.id} style={pillStyle(t.isSelfTag)}>
-            {t.category}: {t.label}
-            {t.isMine && (
+            {t.category === 'CUSTOM' ? `Custom: ${t.label}` : `${t.category}: ${t.label}`}
+            {isCurrentUser && (
               <button
                 onClick={() => handleRemoveTag(t.id)}
                 aria-label={`Remove ${t.label}`}
-                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0, fontSize: '12px' }}
+                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center' }}
               >
-                ✕
+                <CloseIcon size={12} />
               </button>
             )}
           </span>
         ))}
         {tags.length === 0 && <span style={{ color: '#9a9a9a', fontSize: '12px' }}>None yet</span>}
       </div>
-      <div style={{ position: 'relative' }}>
-        <input
-          type="text"
-          placeholder={isCurrentUser ? 'Add a tag...' : 'Tag this person...'}
-          value={tagInput}
-          onChange={(e) => {
-            setTagInput(e.target.value);
-            setShowSuggestions(true);
-          }}
-          onFocus={() => setShowSuggestions(true)}
-          onBlur={() => setShowSuggestions(false)}
-          style={{ padding: '6px', width: '100%', boxSizing: 'border-box', fontSize: '13px' }}
-        />
-        {showSuggestions && (suggestions.length > 0 || canAddCustom) && (
-          <div
-            onMouseDown={(e) => e.preventDefault()}
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              right: 0,
-              zIndex: 5,
-              background: '#1c1c1e',
-              border: '1px solid #3a3a40',
-              borderRadius: '4px',
-              maxHeight: '160px',
-              overflowY: 'auto',
+
+      {isCurrentUser && (
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            placeholder="Add a self tag (pick global or type custom)..."
+            value={tagInput}
+            onChange={(e) => {
+              setTagInput(e.target.value);
+              setShowSuggestions(true);
             }}
-          >
-            {suggestions.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => handleAddDictionaryTag(t)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '13px' }}
-              >
-                {t.category}: {t.label}
-              </button>
-            ))}
-            {canAddCustom && (
-              <button
-                type="button"
-                onClick={handleAddCustomTag}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', fontSize: '13px', color: '#6ab0ff' }}
-              >
-                Add custom tag: "{tagInput.trim()}"
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setShowSuggestions(false)}
+            style={{ padding: '6px', width: '100%', boxSizing: 'border-box', fontSize: '13px' }}
+          />
+          {showSuggestions && (suggestions.length > 0 || canAddCustom) && (
+            <div
+              onMouseDown={(e) => e.preventDefault()}
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                zIndex: 5,
+                background: '#1c1c1e',
+                border: '1px solid #3a3a40',
+                borderRadius: '4px',
+                maxHeight: '160px',
+                overflowY: 'auto',
+              }}
+            >
+              {suggestions.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleAddDictionaryTag(t)}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '13px', color: '#f0f0f0' }}
+                >
+                  <span style={{ color: '#9a9a9a', fontSize: '11px', marginRight: '6px' }}>[{t.category}]</span>
+                  {t.label}
+                </button>
+              ))}
+              {canAddCustom && (
+                <button
+                  type="button"
+                  onClick={handleAddCustomTag}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', fontSize: '13px', color: '#6ab0ff' }}
+                >
+                  + Add user-generated tag: "{tagInput.trim()}"
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {tagError && <p style={{ color: '#ff6b6b', fontSize: '12px', margin: '4px 0 0' }}>{tagError}</p>}
 
       {!isCurrentUser && (

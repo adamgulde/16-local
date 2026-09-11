@@ -23,10 +23,21 @@ public class User {
     private String firstName;
     private String lastName;
 
+    @Column(unique = true, nullable = false)
     private String phoneNumber;
+
+    @Column(unique = true, nullable = false)
+    private String inviteCode;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private java.time.Instant createdAt = java.time.Instant.now();
 
     @Column(length = 2000)
     private String bio;
+
+    /** Maximum degree of separation allowed for incoming connection requests; null means accept all. */
+    private Integer maxConnectionDegree;
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "neighborhood_curve_index")

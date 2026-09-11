@@ -6,41 +6,48 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface RegisterPayload {
-  username: string;
-  password: string;
+export interface SignUpPayload {
+  phoneNumber: string;
+  code: string;
   firstName: string;
   lastName: string;
-  phoneNumber: string;
-  sponsorUsername?: string;
+  inviteCode?: string;
 }
 
-export interface LoginPayload {
-  username: string;
-  password: string;
+export interface InviteCodeValidation {
+  valid: boolean;
+  inviterName?: string;
 }
 
 const TOKEN_KEY = 'authToken';
 const USER_KEY = 'authUser';
 
-export const register = async (payload: RegisterPayload): Promise<AuthResponse> => {
+export const initiateSignInOtp = async (phoneNumber: string): Promise<void> => {
+  await apiClient.post('/api/auth/signin/initiate-otp', { phoneNumber });
+};
+
+export const verifySignInOtp = async (phoneNumber: string, code: string): Promise<AuthResponse> => {
+  const response = await apiClient.post<AuthResponse>('/api/auth/signin/verify-otp', { phoneNumber, code });
+  return response.data;
+};
+
+export const initiateSignUpOtp = async (phoneNumber: string, inviteCode?: string): Promise<void> => {
+  await apiClient.post('/api/auth/signup/initiate-otp', { phoneNumber, inviteCode: inviteCode || null });
+};
+
+export const register = async (payload: SignUpPayload): Promise<AuthResponse> => {
   const response = await apiClient.post<AuthResponse>('/api/auth/register', payload);
   return response.data;
 };
 
-export const login = async (payload: LoginPayload): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>('/api/auth/login', payload);
+export const validateInviteCode = async (code: string): Promise<InviteCodeValidation> => {
+  const response = await apiClient.get<InviteCodeValidation>(`/api/auth/validate-invite?code=${encodeURIComponent(code)}`);
   return response.data;
 };
 
-export const initiateOtp = async (phoneNumber: string): Promise<void> => {
-  await apiClient.post('/api/auth/initiate-otp', phoneNumber);
-};
-
-export const verifyOtp = async (phoneNumber: string, code: string): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>(`/api/auth/verify-otp?phoneNumber=${encodeURIComponent(phoneNumber)}&code=${encodeURIComponent(code)}`);
-  return response.data;
-};
+// Aliases for compatibility
+export const initiateOtp = initiateSignInOtp;
+export const verifyOtp = verifySignInOtp;
 
 export const saveSession = (auth: AuthResponse): void => {
   localStorage.setItem(TOKEN_KEY, auth.token);

@@ -1,78 +1,343 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { User } from '../../services/userService';
-import { register, saveSession } from '../../services/authService';
+import { initiateSignUpOtp, register, saveSession, validateInviteCode } from '../../services/authService';
 import { extractErrorMessage } from '../../services/apiClient';
+import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 
 interface RegisterProps {
   onLogin: (user: User) => void;
 }
 
-type RegistrationMode = 'undecided' | 'invited' | 'own';
+type Step = 'PHONE_INVITE' | 'OTP' | 'PROFILE';
 
 export const Register = ({ onLogin }: RegisterProps) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [searchParams] = useSearchParams();
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [inviteCode, setInviteCode] = useState(() => {
+    return searchParams.get('code') || searchParams.get('invite') || '';
+  });
+  const [inviterName, setInviterName] = useState<string | null>(null);
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
+  const [inviteCodeError, setInviteCodeError] = useState<string | null>(null);
+
+  const [code, setCode] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [sponsorUsername, setSponsorUsername] = useState('');
-  const [registrationMode, setRegistrationMode] = useState<RegistrationMode>('undecided');
+
+  const [step, setStep] = useState<Step>('PHONE_INVITE');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const navigate = useNavigate();
+  const [resendSuccess, setResendSuccess] = useState(false);
 
-  const handleRegister = async () => {
+  // Validate invite code whenever it changes
+  useEffect(() => {
+    const trimmed = inviteCode.trim();
+    if (!trimmed) {
+      setInviterName(null);
+      setInviteCodeError(null);
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setIsValidatingCode(true);
+      try {
+        const result = await validateInviteCode(trimmed);
+        if (!isMounted) return;
+        if (result.valid) {
+          setInviterName(result.inviterName || 'Member');
+          setInviteCodeError(null);
+        } else {
+          setInviterName(null);
+          setInviteCodeError('Invite code not found');
+        }
+      } catch {
+        if (isMounted) {
+          setInviterName(null);
+          setInviteCodeError('Could not validate invite code');
+        }
+      } finally {
+        if (isMounted) setIsValidatingCode(false);
+      }
+    }, 400);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [inviteCode]);
+
+  const handleInitiateSignUp = async () => {
+    const trimmedPhone = phoneNumber.trim();
+    if (!trimmedPhone) {
+      setError('Please enter your phone number.');
+      return;
+    }
+    if (!isCompletePhoneNumber(trimmedPhone)) {
+      setError('Please enter a valid 10-digit phone number (+1 ___-___-____).');
+      return;
+    }
+    if (inviteCode.trim() && inviteCodeError) {
+      setError('Please provide a valid invite code or leave it blank.');
+      return;
+    }
+
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await initiateSignUpOtp(trimmedPhone, inviteCode.trim() || undefined);
+      setStep('OTP');
+      setResendSuccess(false);
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Failed to send verification code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtpStep = () => {
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setError('');
+    setStep('PROFILE');
+  };
+
+  const handleCompleteRegistration = async () => {
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+    if (!trimmedFirst || !trimmedLast) {
+      setError('First and last name are required.');
+      return;
+    }
+
     setError('');
     setIsSubmitting(true);
     try {
       const auth = await register({
-        username,
-        password,
-        firstName,
-        lastName,
-        phoneNumber,
-        sponsorUsername: registrationMode === 'invited' ? sponsorUsername : undefined,
+        phoneNumber: phoneNumber.trim(),
+        code: code.trim(),
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
+        inviteCode: inviteCode.trim() || undefined,
       });
       saveSession(auth);
       onLogin(auth.user);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'An error occurred');
+      setError(extractErrorMessage(err) || 'Registration failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await initiateSignUpOtp(phoneNumber.trim(), inviteCode.trim() || undefined);
+      setResendSuccess(true);
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Failed to resend code.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '10px' }}>
-      <h2>Register</h2>
-      
-      {registrationMode === 'undecided' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-          <p>Were you invited by another user?</p>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setRegistrationMode('invited')}>Yes, I was invited</button>
-            <button onClick={() => setRegistrationMode('own')}>No, I'm building my own network</button>
-          </div>
-          <button onClick={() => navigate('/login')}>Back</button>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '20px' }}>
+      <div style={{
+        background: '#1c1c1e',
+        border: '1px solid #3a3a40',
+        borderRadius: '12px',
+        padding: '32px',
+        width: '100%',
+        maxWidth: '380px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px'
+      }}>
+        <h2 style={{ margin: 0, textAlign: 'center', color: '#f0f0f0' }}>Sign Up</h2>
+
+        {/* Step Indicator */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '4px' }}>
+          <div style={{ height: '4px', width: '32px', borderRadius: '2px', background: step === 'PHONE_INVITE' ? '#3d8bff' : '#4caf50' }} />
+          <div style={{ height: '4px', width: '32px', borderRadius: '2px', background: step === 'OTP' ? '#3d8bff' : step === 'PROFILE' ? '#4caf50' : '#3a3a40' }} />
+          <div style={{ height: '4px', width: '32px', borderRadius: '2px', background: step === 'PROFILE' ? '#3d8bff' : '#3a3a40' }} />
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-          <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-          <input type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-          <input type="text" placeholder="Phone Number" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
-          {registrationMode === 'invited' && (
-            <input type="text" placeholder="Sponsor's Username" value={sponsorUsername} onChange={(e) => setSponsorUsername(e.target.value)} />
-          )}
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setRegistrationMode('undecided')}>Back</button>
-            <button disabled={isSubmitting} onClick={handleRegister}>{isSubmitting ? 'Registering...' : 'Register'}</button>
+
+        {/* STEP 1: Phone & Optional Invite Code */}
+        {step === 'PHONE_INVITE' && (
+          <form onSubmit={(e) => { e.preventDefault(); handleInitiateSignUp(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#9a9a9a', textAlign: 'center' }}>
+              Create your account with your phone number.
+            </p>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>Phone Number</label>
+              <input
+                autoFocus
+                type="tel"
+                placeholder="+1 ___-___-____"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(formatPhoneNumber(e.target.value))}
+                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>
+                Invite Code <span style={{ color: '#6a6a70' }}>(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. INV123"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
+              />
+              {isValidatingCode && <span style={{ fontSize: '12px', color: '#9a9a9a', marginTop: '4px', display: 'block' }}>Checking code...</span>}
+              {inviterName && (
+                <span style={{ fontSize: '12px', color: '#4caf50', marginTop: '4px', display: 'block', fontWeight: 'bold' }}>
+                  ✓ Invited by {inviterName} (will auto-connect)
+                </span>
+              )}
+              {inviteCodeError && (
+                <span style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px', display: 'block' }}>
+                  ✕ {inviteCodeError}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginTop: '4px' }}
+            >
+              {isSubmitting ? 'Sending Code...' : 'Continue'}
+            </button>
+          </form>
+        )}
+
+        {/* STEP 2: OTP Code */}
+        {step === 'OTP' && (
+          <form onSubmit={(e) => { e.preventDefault(); handleVerifyOtpStep(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#9a9a9a', textAlign: 'center' }}>
+              Enter the 6-digit code sent to {phoneNumber}
+            </p>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>Verification Code</label>
+              <input
+                autoFocus
+                type="text"
+                placeholder="6-digit code"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '18px', textAlign: 'center', letterSpacing: '4px' }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              Verify Code
+            </button>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={() => { setStep('PHONE_INVITE'); setError(''); }}
+                style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={isSubmitting}
+                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+              >
+                Resend Code
+              </button>
+            </div>
+            {resendSuccess && <p style={{ color: '#4caf50', fontSize: '12px', margin: 0, textAlign: 'center' }}>New code sent!</p>}
+          </form>
+        )}
+
+        {/* STEP 3: First & Last Name */}
+        {step === 'PROFILE' && (
+          <form onSubmit={(e) => { e.preventDefault(); handleCompleteRegistration(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#9a9a9a', textAlign: 'center' }}>
+              What should people call you?
+            </p>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>First Name</label>
+              <input
+                autoFocus
+                type="text"
+                placeholder="First name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>Last Name</label>
+              <input
+                type="text"
+                placeholder="Last name"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
+              />
+            </div>
+
+            {inviterName && (
+              <div style={{ padding: '8px 10px', background: '#193026', border: '1px solid #2e7d32', borderRadius: '6px', fontSize: '12px', color: '#a5d6a7' }}>
+                🤝 You will automatically connect with <strong>{inviterName}</strong> on the graph.
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              {isSubmitting ? 'Creating Account...' : 'Complete & Display Graph'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setStep('OTP'); setError(''); }}
+              style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', padding: 0, textAlign: 'left' }}
+            >
+              ← Back to Code
+            </button>
+          </form>
+        )}
+
+        {error && (
+          <div style={{ padding: '8px 12px', background: '#3a1414', border: '1px solid #ff6b6b', borderRadius: '6px', color: '#ff6b6b', fontSize: '13px' }}>
+            {error}
           </div>
+        )}
+
+        <hr style={{ border: 'none', borderTop: '1px solid #3a3a40', margin: '4px 0' }} />
+
+        <div style={{ textAlign: 'center', fontSize: '13px', color: '#9a9a9a' }}>
+          Already have an account?{' '}
+          <Link to="/login" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+            Sign In
+          </Link>
         </div>
-      )}
-      {error && <p style={{ color: '#ff6b6b' }}>{error}</p>}
+      </div>
     </div>
   );
 };

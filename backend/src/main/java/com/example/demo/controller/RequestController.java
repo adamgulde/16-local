@@ -7,7 +7,6 @@ import com.example.demo.model.ConnectionRequest;
 import com.example.demo.model.User;
 import com.example.demo.repository.ConnectionRequestRepository;
 import com.example.demo.service.ConnectionService;
-import com.example.demo.service.PlacementService;
 import com.example.demo.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +25,6 @@ public class RequestController {
     private final ConnectionRequestRepository requestRepository;
     private final UserService userService;
     private final ConnectionService connectionService;
-    private final PlacementService placementService;
 
     @PostMapping
     public ResponseEntity<Void> sendRequest(@RequestBody Map<String, String> body,
@@ -47,6 +45,21 @@ public class RequestController {
                         && (r.getReceiver().getId().equals(receiverId) || r.getSender().getId().equals(receiverId)));
         if (alreadyPending) {
             throw new BadRequestException("A pending request already exists between these users");
+        }
+
+        // Auto-reject if sender is further away than the receiver's max degree threshold
+        Integer maxDegree = receiver.getMaxConnectionDegree();
+        if (maxDegree != null && maxDegree > 0) {
+            int currentDegree = connectionService.getDegreeDistance(senderId, receiverId);
+            if (currentDegree > maxDegree) {
+                ConnectionRequest rejected = ConnectionRequest.builder()
+                        .sender(sender)
+                        .receiver(receiver)
+                        .status(ConnectionRequest.RequestStatus.REJECTED)
+                        .build();
+                requestRepository.save(rejected);
+                throw new BadRequestException("This user is not accepting requests from users more than " + maxDegree + " degree(s) away");
+            }
         }
 
         ConnectionRequest connRequest = ConnectionRequest.builder()
@@ -93,10 +106,6 @@ public class RequestController {
 
         request.setStatus(ConnectionRequest.RequestStatus.REJECTED);
         requestRepository.save(request);
-
-        if (request.isSponsorRequest()) {
-            placementService.relocateToNewNeighborhood(request.getSender());
-        }
 
         return ResponseEntity.noContent().build();
     }

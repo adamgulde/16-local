@@ -87,20 +87,6 @@ public class PlacementService {
         return placeInNeighborhood(user, locked, localIndex);
     }
 
-    /**
-     * The one deliberate exception to "assign once, never revisit": when a sponsor declines
-     * the initial connection request, the already-placed user is relocated to a brand-new
-     * neighborhood of their own. Their old neighborhood simply keeps a permanent gap where
-     * their localIndex used to be — harmless at this scale, nothing to reclaim.
-     */
-    @Transactional
-    public User relocateToNewNeighborhood(User user) {
-        Neighborhood neighborhood = neighborhoodRepository.save(Neighborhood.builder()
-                .memberCount(1L)
-                .createdAt(Instant.now())
-                .build());
-        return placeInNeighborhood(user, neighborhood, 0L);
-    }
 
     private User placeInNeighborhood(User user, Neighborhood neighborhood, long localIndex) {
         long mapIndex = (neighborhood.getCurveIndex() << LOCAL_BITS) | localIndex;

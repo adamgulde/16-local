@@ -21,4 +21,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByMapIndexBetween(Long start, Long end);
 
     Optional<User> findByPhoneNumber(String phoneNumber);
+
+    boolean existsByPhoneNumber(String phoneNumber);
+
+    Optional<User> findByInviteCode(String inviteCode);
+
+    boolean existsByInviteCode(String inviteCode);
 }

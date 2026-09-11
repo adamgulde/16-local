@@ -7,6 +7,8 @@ export interface User {
   phoneNumber: string | null;
   bio: string;
   relationships: string[];
+  inviteCode?: string;
+  maxConnectionDegree?: number | null;
 }
 
 export interface Node {
@@ -72,8 +74,26 @@ export const fetchReach = async (id: string, degree: number): Promise<ReachRespo
   return response.data;
 };
 
-// A user's public bio — visible to everyone, but only the backend enforces that only its owner
-// can ever call this (self-only check on the requesting principal).
 export const updateBio = async (id: string, bio: string): Promise<void> => {
   await apiClient.put(`${API_URL}/${id}/bio`, { bio });
+};
+
+export const disconnectUser = async (id: string): Promise<void> => {
+  await apiClient.delete(`${API_URL}/${id}/connection`);
+};
+
+export const updateAutoRejectSetting = async (maxDegree: number | null): Promise<void> => {
+  await apiClient.put(`${API_URL}/me/auto-reject`, { maxConnectionDegree: maxDegree });
+};
+
+export interface SearchHit {
+  user: User;
+  connections: User[];
+}
+
+export const searchUsersApi = async (query: string, searchNames = true, searchTags = true): Promise<User[]> => {
+  const response = await apiClient.get<SearchHit[]>(`${API_URL}/search`, {
+    params: { q: query, searchNames, searchTags }
+  });
+  return response.data.map((hit) => hit.user);
 };

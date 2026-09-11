@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { fullName } from '../services/userService';
 import type { User, Node } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import {
+  drawGrid,
   drawNode,
   linkColorFor,
   linkLineDashFor,
@@ -13,6 +14,17 @@ import {
 import type { GNode, GLink, LinkExtra } from '../graph/rendering';
 import { UserCard } from './UserCard';
 import { BottomSheet } from './BottomSheet';
+import {
+  SearchIcon,
+  MailboxIcon,
+  SettingsIcon,
+  TargetIcon,
+  PlusIcon,
+  MinusIcon,
+  MaximizeIcon,
+  CloseIcon,
+  SlidersIcon,
+} from './Icons';
 
 interface MobileGraphViewProps {
   currentUser: User;
@@ -25,7 +37,7 @@ const ZOOM_STEP_FACTOR = 1.6;
 
 // Real touch targets (44pt minimum, Apple HIG) — desktop's small inline-styled buttons don't
 // carry over to a touch UI.
-const iconButtonStyle: React.CSSProperties = {
+const iconButtonStyle: CSSProperties = {
   minWidth: 44,
   minHeight: 44,
   fontSize: '20px',
@@ -36,7 +48,7 @@ const iconButtonStyle: React.CSSProperties = {
   position: 'relative',
 };
 
-const fabActionStyle: React.CSSProperties = {
+const fabActionStyle: CSSProperties = {
   minWidth: 44,
   minHeight: 44,
   padding: '0 14px',
@@ -122,22 +134,31 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
   const showPathChip = c.activePath !== null && activeSheet !== 'path';
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden', background: '#000' }}>
+    <div ref={rootRef} style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden', background: '#121214' }}>
       <ForceGraph2D<Node, LinkExtra>
         ref={fgRef}
         width={canvasSize.width}
         height={canvasSize.height}
         graphData={c.graphData}
-        backgroundColor="#000000"
+        backgroundColor="#121214"
+        onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
         nodeCanvasObject={(node, ctx, globalScale) =>
           drawNode(node, ctx, globalScale, {
             currentUserId: currentUser.id,
             distanceFromMe: c.distanceFromMe,
             highlightNodes: c.highlightNodes,
             activePath: c.activePath,
+            maxDistance: c.maxDistance,
           })
         }
-        linkColor={(link) => linkColorFor(link as GLink, { highlightLinks: c.highlightLinks, activePath: c.activePath })}
+        linkColor={(link) =>
+          linkColorFor(link as GLink, {
+            highlightLinks: c.highlightLinks,
+            activePath: c.activePath,
+            maxDistance: c.maxDistance,
+            distanceFromMe: c.distanceFromMe,
+          })
+        }
         linkLineDash={(link) => linkLineDashFor(link as GLink)}
         nodePointerAreaPaint={paintNodePointerArea}
         onNodeClick={(node) => selectAndShowCard(String(node.id))}
@@ -149,14 +170,14 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
       {/* Top bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 15, display: 'flex', gap: '8px', alignItems: 'center', padding: '10px 12px' }}>
         <button style={iconButtonStyle} onClick={() => setActiveSheet('search')} aria-label="Search">
-          🔍
+          <SearchIcon size={20} />
         </button>
         <div style={{ flex: 1 }} />
         <button style={{ ...iconButtonStyle, color: '#6ab0ff', fontSize: '14px', fontWeight: 'bold' }} onClick={() => focusAndShowCard(currentUser.id)}>
           {currentUser.firstName[0]}
         </button>
         <button style={iconButtonStyle} onClick={() => setActiveSheet('notifications')} aria-label="Notifications">
-          🔔
+          <MailboxIcon size={20} />
           {c.receivedRequests.length > 0 && (
             <span
               style={{
@@ -180,7 +201,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           )}
         </button>
         <button style={iconButtonStyle} onClick={() => setActiveSheet('settings')} aria-label="Settings">
-          ⚙️
+          <SettingsIcon size={20} />
         </button>
       </div>
 
@@ -207,26 +228,26 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
       <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 15, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
         {fabOpen && (
           <>
-            <button style={fabActionStyle} onClick={() => { c.handleZoomStep(1 / ZOOM_STEP_FACTOR); }}>
-              Zoom Out
+            <button style={{ ...fabActionStyle, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => { c.handleZoomStep(1 / ZOOM_STEP_FACTOR); }}>
+              <MinusIcon size={16} /> Zoom Out
             </button>
-            <button style={fabActionStyle} onClick={() => { c.handleZoomStep(ZOOM_STEP_FACTOR); }}>
-              Zoom In
+            <button style={{ ...fabActionStyle, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => { c.handleZoomStep(ZOOM_STEP_FACTOR); }}>
+              <PlusIcon size={16} /> Zoom In
             </button>
-            <button style={fabActionStyle} onClick={() => { c.handleGlobalZoom(); setFabOpen(false); }}>
-              Global Zoom
+            <button style={{ ...fabActionStyle, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => { c.handleGlobalZoom(); setFabOpen(false); }}>
+              <MaximizeIcon size={16} /> Global Zoom
             </button>
-            <button style={fabActionStyle} onClick={() => { c.handleLocateMe(); setFabOpen(false); }}>
-              Locate Me
+            <button style={{ ...fabActionStyle, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => { c.handleLocateMe(); setFabOpen(false); }}>
+              <TargetIcon size={16} /> Locate Me
             </button>
           </>
         )}
         <button
-          style={{ ...iconButtonStyle, width: 52, height: 52, fontSize: '24px' }}
+          style={{ ...iconButtonStyle, width: 52, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setFabOpen((v) => !v)}
           aria-label="View controls"
         >
-          {fabOpen ? '×' : '⊕'}
+          {fabOpen ? <CloseIcon size={22} /> : <SlidersIcon size={22} />}
         </button>
       </div>
 
@@ -244,11 +265,31 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
         <input
           autoFocus
           type="text"
-          placeholder="Search users..."
+          placeholder="Search users or tags..."
           value={c.searchTerm}
           onChange={(e) => c.setSearchTerm(e.target.value)}
-          style={{ padding: '10px', width: '100%', boxSizing: 'border-box', marginBottom: '8px' }}
+          style={{ padding: '10px', width: '100%', boxSizing: 'border-box', marginBottom: '8px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '6px' }}
         />
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '13px', color: '#9a9a9a' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={c.searchNames}
+              onChange={(e) => c.setSearchNames(e.target.checked)}
+              style={{ accentColor: '#3d8bff' }}
+            />
+            Names
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={c.searchTags}
+              onChange={(e) => c.setSearchTags(e.target.checked)}
+              style={{ accentColor: '#3d8bff' }}
+            />
+            Tags
+          </label>
+        </div>
         {c.searchMatches.map((u) => (
           <button
             key={u.id}
@@ -266,6 +307,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
               background: 'none',
               border: 'none',
               borderBottom: '1px solid #3a3a40',
+              color: '#f0f0f0',
             }}
           >
             {fullName(u)}
@@ -320,8 +362,54 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
             ))}
       </BottomSheet>
 
-      {/* Settings sheet: view mode + reach, and the pending-connections toggle */}
+      {/* Settings sheet */}
       <BottomSheet open={activeSheet === 'settings'} onClose={() => setActiveSheet(null)} title="Settings">
+        {/* Auto-Reject Threshold */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>
+            Auto-Reject Threshold
+          </label>
+          <p style={{ fontSize: '12px', color: '#9a9a9a', margin: '0 0 6px' }}>
+            Automatically reject requests from users farther than N hops away.
+          </p>
+          <select
+            value={c.autoRejectDegree ?? 'off'}
+            onChange={(e) => {
+              const val = e.target.value === 'off' ? null : Number(e.target.value);
+              c.handleUpdateAutoReject(val);
+            }}
+            style={{ width: '100%', padding: '8px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#f0f0f0', borderRadius: '6px', minHeight: 44 }}
+          >
+            <option value="off">Off (Allow from anyone)</option>
+            <option value="1">1 hop (Friends only)</option>
+            <option value="2">2 hops (Friends of friends)</option>
+            <option value="3">3 hops (3 degrees)</option>
+            <option value="4">4 hops (4 degrees)</option>
+            <option value="5">5 hops (5 degrees)</option>
+            <option value="6">6 hops (6 degrees)</option>
+          </select>
+        </div>
+
+        {/* Max Distance Slider */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>
+            <span>Max Connection Distance</span>
+            <span style={{ color: '#6ab0ff' }}>{c.maxDistance === Infinity ? 'Unlimited' : `${c.maxDistance} hops`}</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="7"
+            step="1"
+            value={c.maxDistance === Infinity ? 7 : c.maxDistance}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              c.setMaxDistance(val === 7 ? Infinity : val);
+            }}
+            style={{ width: '100%', accentColor: '#3d8bff', height: 32 }}
+          />
+        </div>
+
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <button style={{ ...fabActionStyle, fontWeight: c.viewMode === 'global' ? 'bold' : 'normal' }} onClick={() => c.setViewMode('global')}>
             Global View
@@ -362,7 +450,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           />
           Show pending connections
         </label>
-        <button onClick={onLogout} style={{ ...fabActionStyle, marginTop: '12px' }}>
+        <button onClick={onLogout} style={{ ...fabActionStyle, marginTop: '12px', borderColor: '#ff6b6b', color: '#ff6b6b' }}>
           Log out
         </button>
       </BottomSheet>
@@ -387,6 +475,8 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
               showSendRequest={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
               onFindPath={() => findPathAndShowSheet(c.selectedUser!.id)}
               showFindPath={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+              onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}
+              showDisconnect={c.selectedUser.id !== currentUser.id && currentUser.relationships.includes(c.selectedUser.id)}
               onSelectNode={(nodeId: string) => selectAndShowCard(nodeId)}
               isCurrentUser={c.selectedUser.id === currentUser.id}
             />

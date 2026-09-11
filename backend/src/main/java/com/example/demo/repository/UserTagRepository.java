@@ -16,4 +16,9 @@ public interface UserTagRepository extends JpaRepository<UserTag, UUID> {
 
     /** Every tag a given tagger has placed on a given subject — used for the per-pair cap and duplicate checks. */
     List<UserTag> findByTaggerIdAndSubjectId(UUID taggerId, UUID subjectId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT ut.subject FROM UserTag ut WHERE " +
+            "LOWER(ut.customLabel) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "(ut.tag IS NOT NULL AND LOWER(ut.tag.label) LIKE LOWER(CONCAT('%', :query, '%')))")
+    List<com.example.demo.model.User> findSubjectsByTagQuery(@org.springframework.data.repository.query.Param("query") String query);
 }

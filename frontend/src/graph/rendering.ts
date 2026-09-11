@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type RefObject } from 'react';
 import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-graph-2d';
 import type { Node, Link, User } from '../services/userService';
 
@@ -69,7 +69,7 @@ const LINK_DISTANCE = 20;
 
 /** Wires the charge/link forces to distanceFromMe — identical physics for every renderer. */
 export const useGraphPhysics = (
-  fgRef: React.RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
+  fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
   links: DisplayLink[],
   distanceFromMe: Map<string, number>
 ) => {
@@ -106,11 +106,64 @@ export const useGraphPhysics = (
   }, [links, distanceFromMe, fgRef]);
 };
 
+export const drawGrid = (ctx: CanvasRenderingContext2D, globalScale: number) => {
+  ctx.save();
+  const matrix = ctx.getTransform();
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const x0 = (0 - matrix.e) / matrix.a;
+  const x1 = (w - matrix.e) / matrix.a;
+  const y0 = (0 - matrix.f) / matrix.d;
+  const y1 = (h - matrix.f) / matrix.d;
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+
+  let step = 100;
+  if (globalScale < 0.2) step = 500;
+  else if (globalScale < 0.5) step = 200;
+  else if (globalScale > 2) step = 50;
+
+  const startX = Math.floor(minX / step) * step;
+  const endX = Math.ceil(maxX / step) * step;
+  const startY = Math.floor(minY / step) * step;
+  const endY = Math.ceil(maxY / step) * step;
+
+  // Subtle coordinate grid lines
+  ctx.lineWidth = 1 / globalScale;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.beginPath();
+  for (let x = startX; x <= endX; x += step) {
+    ctx.moveTo(x, minY);
+    ctx.lineTo(x, maxY);
+  }
+  for (let y = startY; y <= endY; y += step) {
+    ctx.moveTo(minX, y);
+    ctx.lineTo(maxX, y);
+  }
+  ctx.stroke();
+
+  // Subtle intersection coordinate dots
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+  const dotRadius = 1.6 / globalScale;
+  for (let x = startX; x <= endX; x += step) {
+    for (let y = startY; y <= endY; y += step) {
+      ctx.beginPath();
+      ctx.arc(x, y, dotRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+};
+
 interface NodeCanvasOptions {
   currentUserId: string;
   distanceFromMe: Map<string, number>;
   highlightNodes: Set<string>;
   activePath: string[] | null;
+  maxDistance?: number;
+  filterNodes?: Set<string> | null;
 }
 
 /** Identical node draw logic for every renderer — dimming, degree color, zoom-scaled radius. */
@@ -118,17 +171,22 @@ export const drawNode = (
   node: GNode,
   ctx: CanvasRenderingContext2D,
   globalScale: number,
-  { currentUserId, distanceFromMe, highlightNodes, activePath }: NodeCanvasOptions
+  { currentUserId, distanceFromMe, highlightNodes, activePath, maxDistance = Infinity, filterNodes = null }: NodeCanvasOptions
 ) => {
   const idStr = String(node.id);
   const isHighlighted = highlightNodes.has(idStr);
-  // When a path is open, everything not on that path fades to 50% so the path itself pops —
-  // but only while a path is actually open, not for an ordinary click-to-highlight selection.
-  const dimmed = activePath !== null && !isHighlighted;
-  const nodeColor = node.id === currentUserId ? CURRENT_USER_COLOR : colorForDistance(distanceFromMe.get(idStr));
+  const isMe = node.id === currentUserId;
+  const dist = isMe ? 0 : distanceFromMe.get(idStr);
+  const isBeyondDistance = maxDistance !== Infinity && (dist === undefined || dist > maxDistance);
+  const isFilteredOut = filterNodes !== null && !filterNodes.has(idStr) && !isMe;
+  // When a path is open, everything not on that path fades.
+  // When maxDistance is set, nodes beyond maxDistance fade out.
+  // When a tag filter is active, non-matching nodes fade out.
+  const dimmed = (activePath !== null && !isHighlighted) || (isBeyondDistance && !isHighlighted) || isFilteredOut;
+  const nodeColor = isMe ? CURRENT_USER_COLOR : colorForDistance(dist);
   const radius = (isHighlighted ? 12 : 8) / globalScale;
 
-  ctx.globalAlpha = dimmed ? 0.5 : 1;
+  ctx.globalAlpha = dimmed ? 0.15 : 1;
   ctx.beginPath();
   // Radius given in screen pixels, not world units, so nodes stay a constant on-screen size at
   // any zoom level instead of ballooning to fill the screen when zoomToFit lands on a tightly-
@@ -137,11 +195,8 @@ export const drawNode = (
   ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
   ctx.fill();
 
-  // Skip labels once zoomed out far enough that they'd be unreadable clutter anyway — this is
-  // also the single biggest framerate win with 100+ nodes on screen, since text shaping/
-  // fillText dwarfs the cost of the circles themselves. Highlighted nodes are few in number
-  // and worth their label at any zoom.
-  if (isHighlighted || globalScale > LABEL_VISIBILITY_SCALE) {
+  // Skip labels if dimmed, or once zoomed out far enough that they'd be unreadable clutter
+  if (!dimmed && (isHighlighted || globalScale > LABEL_VISIBILITY_SCALE)) {
     const fontSize = 10 / globalScale;
     ctx.font = `${fontSize}px Sans-Serif`;
     ctx.textAlign = 'center';
@@ -177,17 +232,34 @@ export const paintNodePointerArea = (
 interface LinkColorOptions {
   highlightLinks: Set<string>;
   activePath: string[] | null;
+  maxDistance?: number;
+  distanceFromMe?: Map<string, number>;
+  filterNodes?: Set<string> | null;
 }
 
 /** Identical link color logic for every renderer — highlight, dimming, pending vs. confirmed. */
-export const linkColorFor = (link: GLink, { highlightLinks, activePath }: LinkColorOptions): string => {
+export const linkColorFor = (
+  link: GLink,
+  { highlightLinks, activePath, maxDistance = Infinity, distanceFromMe, filterNodes = null }: LinkColorOptions
+): string => {
   const sourceId = nodeRefId(link.source as string | GNode);
   const targetId = nodeRefId(link.target as string | GNode);
   const isHighlighted = highlightLinks.has(`${sourceId}-${targetId}`) || highlightLinks.has(`${targetId}-${sourceId}`);
   if (isHighlighted) return 'red';
-  const dimmed = activePath !== null;
+
+  let isBeyondDistance = false;
+  if (maxDistance !== Infinity && distanceFromMe) {
+    const sDist = distanceFromMe.get(sourceId);
+    const tDist = distanceFromMe.get(targetId);
+    if (sDist === undefined || sDist > maxDistance || tDist === undefined || tDist > maxDistance) {
+      isBeyondDistance = true;
+    }
+  }
+
+  const isFilteredOut = filterNodes !== null && (!filterNodes.has(sourceId) || !filterNodes.has(targetId));
+  const dimmed = activePath !== null || isBeyondDistance || isFilteredOut;
   const base: [number, number, number] = link.pending ? [102, 102, 102] : [200, 210, 220];
-  return `rgba(${base[0]}, ${base[1]}, ${base[2]}, ${dimmed ? 0.25 : 0.8})`;
+  return `rgba(${base[0]}, ${base[1]}, ${base[2]}, ${dimmed ? 0.08 : 0.8})`;
 };
 
 export const linkLineDashFor = (link: GLink): number[] | null => (link.pending ? [4, 4] : null);
