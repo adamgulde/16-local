@@ -46,10 +46,43 @@ class TagServiceTest {
     }
 
     @Test
-    void selfTagMustUseDictionaryTagNotACustomLabel() {
-        assertThatThrownBy(() -> tagService.addTag(selfId, selfId, null, "my own label"))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("dictionary");
+    void addTagSavesACustomLabelOnSelf() {
+        when(userTagRepository.findByTaggerIdAndSubjectId(selfId, selfId)).thenReturn(List.of());
+        when(userTagRepository.save(any())).thenAnswer(inv -> {
+            UserTag ut = inv.getArgument(0);
+            ut.setId(UUID.randomUUID());
+            return ut;
+        });
+
+        TagAssignmentResponse response = tagService.addTag(selfId, selfId, null, "  Creative Mind  ");
+
+        assertThat(response.label()).isEqualTo("Creative Mind");
+        assertThat(response.category()).isEqualTo("Custom");
+        assertThat(response.isSelfTag()).isTrue();
+        assertThat(response.isMine()).isTrue();
+    }
+
+    @Test
+    void getTagsForSubjectFiltersOutCustomTagsFromOtherUsers() {
+        UUID viewerId = otherId;
+        UserTag selfCustomTag = UserTag.builder().tagger(User.builder().id(selfId).build())
+                .subject(User.builder().id(selfId).build())
+                .customLabel("Private Personal Note")
+                .build();
+        UserTag selfPublicTag = UserTag.builder().tagger(User.builder().id(selfId).build())
+                .subject(User.builder().id(selfId).build())
+                .tag(Tag.builder().category("Role").label("Founder").build())
+                .build();
+        when(userTagRepository.findBySubjectIdAndTaggerIdIn(selfId, List.of(selfId, viewerId)))
+                .thenReturn(List.of(selfCustomTag, selfPublicTag));
+
+        List<TagAssignmentResponse> results = tagService.getTagsForSubject(selfId, viewerId);
+
+        // selfCustomTag is filtered out because viewerId != tagger (selfId)
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).label()).isEqualTo("Founder");
+        assertThat(results.get(0).isSelfTag()).isTrue();
+        assertThat(results.get(0).isMine()).isFalse();
     }
 
     @Test

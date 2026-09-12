@@ -35,13 +35,23 @@
 
 button,
 input,
-select {
+select,
+textarea {
   background: var(--input-bg);
   color: var(--text-h);
   border: 1px solid var(--border);
   border-radius: 4px;
   font: inherit;
   padding: 6px 10px;
+}
+
+/* Prevent iOS Safari auto-zoom on input focus */
+@media screen and (max-width: 900px), screen and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 button {

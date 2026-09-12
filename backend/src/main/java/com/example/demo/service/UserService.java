@@ -72,7 +72,7 @@ public class UserService {
         }
 
         if (searchTags) {
-            candidates.addAll(userTagRepository.findSubjectsByTagQuery(trimmed));
+            candidates.addAll(userTagRepository.findSubjectsByTagQuery(trimmed, requestingUserId));
         }
 
         return candidates.stream()

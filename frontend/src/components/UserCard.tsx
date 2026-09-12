@@ -13,12 +13,14 @@ interface UserCardProps {
   onClose: () => void;
   onSendRequest?: () => void;
   showSendRequest?: boolean;
+  isRequestPending?: boolean;
   onFindPath?: () => void;
   showFindPath?: boolean;
   onDisconnect?: () => void;
   showDisconnect?: boolean;
   onSelectNode: (nodeId: string) => void;
   isCurrentUser: boolean;
+  style?: CSSProperties;
 }
 
 const primaryButtonStyle: CSSProperties = {
@@ -36,27 +38,27 @@ const primaryButtonStyle: CSSProperties = {
   touchAction: 'manipulation',
 };
 
-// Name, then Bio, then your own tags/notes on this person, then the — potentially long — public
-// connections list (capped with its own scroll so it can never push everything above it out of
-// view), with the primary action last: by the time you'd click Send Request/Find Path, you've
-// already seen everything about this person that would inform whether to.
+// Profile card: Name, Phone, and Primary Actions (Find Path, Connect/Disconnect) are placed
+// prominently at the top so they are never hidden or pushed offscreen by long connection lists.
 export const UserCard = ({
   user,
   relationshipNames,
   onClose,
   onSendRequest,
   showSendRequest,
+  isRequestPending,
   onFindPath,
   showFindPath,
   onDisconnect,
   showDisconnect,
   onSelectNode,
   isCurrentUser,
+  style,
 }: UserCardProps) => {
   const [copied, setCopied] = useState(false);
 
   return (
-    <div className="user-card" style={{ padding: '16px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px' }}>
+    <div className="user-card" style={{ padding: '16px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px', ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h2 style={{ margin: 0 }}>
@@ -91,6 +93,54 @@ export const UserCard = ({
         </button>
       </div>
 
+      {/* Primary Actions placed prominently at the top */}
+      {(showSendRequest || showFindPath || showDisconnect) && (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' }}>
+          {showFindPath && (
+            <button onClick={onFindPath} style={primaryButtonStyle}>
+              Find Path
+            </button>
+          )}
+          {showSendRequest && (
+            <button
+              onClick={isRequestPending ? undefined : onSendRequest}
+              disabled={isRequestPending}
+              style={{
+                ...primaryButtonStyle,
+                background: isRequestPending ? '#2c2c2e' : '#1e3a5f',
+                borderColor: isRequestPending ? '#3a3a40' : '#2b5278',
+                color: isRequestPending ? '#9a9a9a' : '#fff',
+                cursor: isRequestPending ? 'default' : 'pointer',
+              }}
+            >
+              {isRequestPending ? 'Request Sent' : 'Send Connection Request'}
+            </button>
+          )}
+          {showDisconnect && (
+            <button
+              onClick={onDisconnect}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(211, 47, 47, 0.15)',
+                border: '1px solid #d32f2f',
+                color: '#ff6b6b',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                minHeight: 44,
+                fontSize: '13px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                touchAction: 'manipulation',
+              }}
+            >
+              <DisconnectIcon size={16} /> Disconnect
+            </button>
+          )}
+        </div>
+      )}
+
       <hr style={dividerStyle} />
 
       <BioSection subjectId={user.id} bio={user.bio} isCurrentUser={isCurrentUser} />
@@ -114,46 +164,6 @@ export const UserCard = ({
         ))}
         {user.relationships.length === 0 && <span style={{ color: '#9a9a9a' }}>None yet</span>}
       </div>
-
-      {(showSendRequest || showFindPath || showDisconnect) && (
-        <>
-          <hr style={dividerStyle} />
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {showSendRequest && (
-              <button onClick={onSendRequest} style={primaryButtonStyle}>
-                Send Connection Request
-              </button>
-            )}
-            {showFindPath && (
-              <button onClick={onFindPath} style={primaryButtonStyle}>
-                Find Path
-              </button>
-            )}
-            {showDisconnect && (
-              <button
-                onClick={onDisconnect}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'rgba(211, 47, 47, 0.15)',
-                  border: '1px solid #d32f2f',
-                  color: '#ff6b6b',
-                  borderRadius: '8px',
-                  padding: '8px 16px',
-                  minHeight: 44,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontWeight: 500,
-                  touchAction: 'manipulation',
-                }}
-              >
-                <DisconnectIcon size={16} /> Disconnect
-              </button>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 };

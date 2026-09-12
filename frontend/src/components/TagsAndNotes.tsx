@@ -10,20 +10,28 @@ interface TagsAndNotesProps {
   isCurrentUser: boolean;
 }
 
-const pillStyle = (filled: boolean): CSSProperties => ({
+const pillStyle = (isSelfTag: boolean, isPrivateMine: boolean): CSSProperties => ({
   display: 'inline-flex',
   alignItems: 'center',
   gap: '4px',
   padding: '3px 8px',
   borderRadius: '12px',
   fontSize: '12px',
-  border: '1px solid #3a3a40',
-  background: filled ? '#2a3f5f' : 'transparent',
-  color: '#f0f0f0',
+  border: isPrivateMine
+    ? '1px solid rgba(192, 132, 252, 0.5)'
+    : isSelfTag
+    ? '1px solid #3d8bff'
+    : '1px solid #3a3a40',
+  background: isPrivateMine
+    ? 'rgba(192, 132, 252, 0.15)'
+    : isSelfTag
+    ? '#2a3f5f'
+    : 'transparent',
+  color: isPrivateMine ? '#e9d5ff' : '#f0f0f0',
 });
 
-// Self-tags (isSelfTag) are public declarations — anyone viewing this card sees them, filled
-// in. Users can only tag themselves (both dictionary tags and custom user-generated tags).
+// Self-tags (isSelfTag) are public declarations — anyone viewing this card sees them.
+// Custom tags placed on any user are private to the tagger and only shown on the logged-in user's screen.
 export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) => {
   const [tags, setTags] = useState<TagAssignment[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -63,8 +71,8 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
   }, [tagInput, allTags, appliedLabels]);
 
   const exactDictionaryMatch = allTags.some((t) => t.label.toLowerCase() === tagInput.trim().toLowerCase());
-  // Users can only tag themselves: allow custom tags if user is current user
-  const canAddCustom = isCurrentUser && tagInput.trim().length > 0 && !exactDictionaryMatch && !appliedLabels.has(tagInput.trim().toLowerCase());
+  // Any user can add custom tags; on another user, custom tags are private to the tagger
+  const canAddCustom = tagInput.trim().length > 0 && !exactDictionaryMatch && !appliedLabels.has(tagInput.trim().toLowerCase());
 
   const handleAddDictionaryTag = async (tag: Tag) => {
     setTagError(null);
@@ -115,79 +123,100 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
 
   return (
     <div>
-      <p style={sectionHeaderStyle}>Tags</p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
-        {tags.map((t) => (
-          <span key={t.id} style={pillStyle(t.isSelfTag)}>
-            {t.category === 'CUSTOM' ? `Custom: ${t.label}` : `${t.category}: ${t.label}`}
-            {isCurrentUser && (
-              <button
-                onClick={() => handleRemoveTag(t.id)}
-                aria-label={`Remove ${t.label}`}
-                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center' }}
-              >
-                <CloseIcon size={12} />
-              </button>
-            )}
-          </span>
-        ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+        <p style={sectionHeaderStyle}>Tags</p>
+        {!isCurrentUser && (
+          <span style={{ fontSize: '11px', color: '#c084fc' }}>Custom tags are private to you</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+        {tags.map((t) => {
+          const isPrivateMine = t.isMine && !t.isSelfTag;
+          return (
+            <span key={t.id} style={pillStyle(t.isSelfTag, isPrivateMine)}>
+              {isPrivateMine
+                ? `Custom (Private): ${t.label}`
+                : t.category === 'CUSTOM'
+                ? `Custom: ${t.label}`
+                : `${t.category}: ${t.label}`}
+              {t.isMine && (
+                <button
+                  onClick={() => handleRemoveTag(t.id)}
+                  aria-label={`Remove ${t.label}`}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: isPrivateMine ? '#e9d5ff' : '#9a9a9a',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <CloseIcon size={12} />
+                </button>
+              )}
+            </span>
+          );
+        })}
         {tags.length === 0 && <span style={{ color: '#9a9a9a', fontSize: '12px' }}>None yet</span>}
       </div>
 
-      {isCurrentUser && (
-        <div style={{ position: 'relative' }}>
-          <input
-            type="text"
-            placeholder="Add a self tag (pick global or type custom)..."
-            value={tagInput}
-            onChange={(e) => {
-              setTagInput(e.target.value);
-              setShowSuggestions(true);
+      <div style={{ position: 'relative' }}>
+        <input
+          type="text"
+          placeholder={isCurrentUser ? "Add a self tag (pick global or type custom)..." : "Add a private custom tag for this user..."}
+          value={tagInput}
+          onChange={(e) => {
+            setTagInput(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setShowSuggestions(false)}
+          style={{ padding: '8px 10px', width: '100%', boxSizing: 'border-box', fontSize: '16px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '6px' }}
+        />
+        {showSuggestions && (suggestions.length > 0 || canAddCustom) && (
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              zIndex: 10,
+              background: '#1c1c1e',
+              border: '1px solid #3a3a40',
+              borderRadius: '4px',
+              maxHeight: '160px',
+              overflowY: 'auto',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
             }}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => setShowSuggestions(false)}
-            style={{ padding: '6px', width: '100%', boxSizing: 'border-box', fontSize: '13px' }}
-          />
-          {showSuggestions && (suggestions.length > 0 || canAddCustom) && (
-            <div
-              onMouseDown={(e) => e.preventDefault()}
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                zIndex: 5,
-                background: '#1c1c1e',
-                border: '1px solid #3a3a40',
-                borderRadius: '4px',
-                maxHeight: '160px',
-                overflowY: 'auto',
-              }}
-            >
-              {suggestions.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => handleAddDictionaryTag(t)}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '13px', color: '#f0f0f0' }}
-                >
-                  <span style={{ color: '#9a9a9a', fontSize: '11px', marginRight: '6px' }}>[{t.category}]</span>
-                  {t.label}
-                </button>
-              ))}
-              {canAddCustom && (
-                <button
-                  type="button"
-                  onClick={handleAddCustomTag}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', background: 'none', border: 'none', fontSize: '13px', color: '#6ab0ff' }}
-                >
-                  + Add user-generated tag: "{tagInput.trim()}"
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+          >
+            {suggestions.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => handleAddDictionaryTag(t)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '14px', color: '#f0f0f0', cursor: 'pointer' }}
+              >
+                <span style={{ color: '#9a9a9a', fontSize: '11px', marginRight: '6px' }}>[{t.category}]</span>
+                {t.label}
+              </button>
+            ))}
+            {canAddCustom && (
+              <button
+                type="button"
+                onClick={handleAddCustomTag}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', fontSize: '14px', color: '#c084fc', cursor: 'pointer' }}
+              >
+                {isCurrentUser
+                  ? `+ Add custom tag: "${tagInput.trim()}"`
+                  : `+ Add private custom tag: "${tagInput.trim()}" (visible only to you)`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       {tagError && <p style={{ color: '#ff6b6b', fontSize: '12px', margin: '4px 0 0' }}>{tagError}</p>}
 
       {!isCurrentUser && (
@@ -202,7 +231,7 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
                   onChange={(e) => setNoteDraft(e.target.value)}
                   placeholder="Private notes only you can see..."
                   rows={4}
-                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '6px', fontSize: '13px' }}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '8px 10px', fontSize: '16px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '6px' }}
                 />
                 <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
                   <button onClick={handleSaveNote} disabled={noteSaving}>

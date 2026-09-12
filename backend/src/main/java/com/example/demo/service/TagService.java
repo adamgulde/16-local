@@ -38,16 +38,21 @@ public class TagService {
 
     public List<TagAssignmentResponse> getTagsForSubject(UUID subjectId, UUID viewerId) {
         return userTagRepository.findBySubjectIdAndTaggerIdIn(subjectId, List.of(subjectId, viewerId)).stream()
+                .filter(userTag -> {
+                    // Custom tags are strictly private and only shown on the logged-in tagger's screen
+                    if (userTag.getTag() == null || userTag.getCustomLabel() != null) {
+                        return userTag.getTagger().getId().equals(viewerId);
+                    }
+                    // Dictionary tags are visible if public self-tag or placed by viewer
+                    return true;
+                })
                 .map(userTag -> TagAssignmentResponse.from(userTag, viewerId))
                 .toList();
     }
 
     public TagAssignmentResponse addTag(UUID subjectId, UUID taggerId, UUID tagId, String customLabel) {
-        if (!taggerId.equals(subjectId)) {
-            throw new BadRequestException("Users can only tag themselves");
-        }
         User subject = userService.getUserById(subjectId);
-        User tagger = subject;
+        User tagger = userService.getUserById(taggerId);
         String normalizedCustomLabel = customLabel == null || customLabel.isBlank() ? null : customLabel.trim();
 
         if (tagId == null && normalizedCustomLabel == null) {

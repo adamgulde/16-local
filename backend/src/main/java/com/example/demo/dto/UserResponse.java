@@ -2,6 +2,7 @@ package com.example.demo.dto;
 
 import com.example.demo.model.User;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,7 +20,8 @@ public record UserResponse(
         List<UUID> relationships,
         String inviteCode,
         Integer maxConnectionDegree,
-        Boolean defaultUser
+        Boolean defaultUser,
+        Instant createdAt
 ) {
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber) {
         return new UserResponse(
@@ -31,7 +33,8 @@ public record UserResponse(
                 relationships,
                 user.getInviteCode(),
                 user.getMaxConnectionDegree(),
-                user.isDefaultUser()
+                user.isDefaultUser(),
+                user.getCreatedAt()
         );
     }
 }

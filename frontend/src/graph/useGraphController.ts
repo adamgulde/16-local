@@ -22,6 +22,21 @@ const requestsEqual = (a: ConnectionRequest[], b: ConnectionRequest[]): boolean 
   return b.every((r) => aKeys.has(key(r)));
 };
 
+// Checks if the user directory or graph topology changed (membership or connections)
+const usersEqual = (a: User[], b: User[]): boolean => {
+  if (a.length !== b.length) return false;
+  const aMap = new Map(a.map((u) => [u.id, u]));
+  for (const uB of b) {
+    const uA = aMap.get(uB.id);
+    if (!uA) return false;
+    if (uA.firstName !== uB.firstName || uA.lastName !== uB.lastName) return false;
+    if (uA.relationships.length !== uB.relationships.length) return false;
+    const aRels = new Set(uA.relationships);
+    if (!uB.relationships.every((r) => aRels.has(r))) return false;
+  }
+  return true;
+};
+
 /**
  * Every piece of state, derived data, and handler the graph UI needs — deliberately holds no
  * opinion on layout or presentation, so the desktop (GraphContainer) and mobile (MobileGraphView)
@@ -50,13 +65,17 @@ export const useGraphController = (
   const [initError, setInitError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showPendingConnections, setShowPendingConnections] = useState(false);
-  const [requestsTab, setRequestsTab] = useState<'received' | 'sent'>('received');
+  const [requestsTab, setRequestsTab] = useState<'received' | 'sent' | 'newUsers'>('received');
 
   const [maxDistance, setMaxDistance] = useState<number>(Infinity);
   const [searchNames, setSearchNames] = useState(true);
   const [searchTags, setSearchTags] = useState(true);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [autoRejectDegree, setAutoRejectDegree] = useState<number | null>(currentUser.maxConnectionDegree ?? null);
+  const [hasGraphUpdate, setHasGraphUpdate] = useState(false);
+  const [autoApplyUpdates, setAutoApplyUpdates] = useState(false);
+  const pendingUsersRef = useRef<User[] | null>(null);
+  const pendingRequestsRef = useRef<ConnectionRequest[] | null>(null);
 
   const distanceFromMe = useMemo(() => computeDistanceFromMe(users, currentUser.id), [users, currentUser.id]);
 
@@ -123,6 +142,34 @@ export const useGraphController = (
     [requests, currentUser.id]
   );
 
+  // New users sorted by creation timestamp descending (newest first)
+  const newUsers = useMemo(() => {
+    return [...users]
+      .filter((u) => u.id !== currentUser.id)
+      .sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      });
+  }, [users, currentUser.id]);
+
+  const connectedUserIds = useMemo(() => {
+    const me = users.find((u) => u.id === currentUser.id);
+    return new Set(me?.relationships ?? currentUser.relationships ?? []);
+  }, [users, currentUser.id, currentUser.relationships]);
+
+  const sentRequestUserIds = useMemo(() => {
+    return new Set(sentRequests.map((r) => r.receiver.id));
+  }, [sentRequests]);
+
+  const receivedRequestUserIds = useMemo(() => {
+    return new Set(receivedRequests.map((r) => r.sender.id));
+  }, [receivedRequests]);
+
+  const receivedRequestMap = useMemo(() => {
+    return new Map(receivedRequests.map((r) => [r.sender.id, r.id]));
+  }, [receivedRequests]);
+
   const getRelationshipNames = useCallback(
     (relationshipIds: string[]) =>
       relationshipIds
@@ -177,6 +224,9 @@ export const useGraphController = (
       setUsers(usersData);
       setRequests(requestsData);
       setInitError(null);
+      setHasGraphUpdate(false);
+      pendingUsersRef.current = null;
+      pendingRequestsRef.current = null;
     } catch {
       setInitError('Could not load the directory. Please try again.');
     } finally {
@@ -184,33 +234,65 @@ export const useGraphController = (
     }
   }, []);
 
+  const handleRefreshGraph = useCallback(() => {
+    if (pendingUsersRef.current) {
+      setUsers(pendingUsersRef.current);
+      pendingUsersRef.current = null;
+      if (pendingRequestsRef.current) {
+        setRequests(pendingRequestsRef.current);
+        pendingRequestsRef.current = null;
+      }
+      setHasGraphUpdate(false);
+    } else {
+      loadData();
+    }
+  }, [loadData]);
+
+  const dismissGraphUpdate = useCallback(() => {
+    setHasGraphUpdate(false);
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
-  // Polls for changes made by other users (a request they sent you, one they accepted) — the
-  // notifications list otherwise only ever refreshes after *your own* actions. Silent on
-  // failure: a dropped background poll shouldn't flip the whole screen to an error state, the
-  // next tick just tries again.
-  //
-  // Deliberately does NOT refetch the user directory here, and only calls setRequests when the
-  // content actually changed (not just a new array/object reference from the fetch) — the first
-  // version of this replaced `users` wholesale every tick, which handed ForceGraph2D a brand-new
-  // graphData object every 5s and reset/rejiggled the entire live simulation continuously, even
-  // when nothing had actually changed. A genuinely new/updated connection to someone still won't
-  // show up on the graph itself until the next full reload — a deliberate trade against
-  // constantly disrupting the graph for what's almost always a no-op poll.
+  // Polls for changes made by other users (a request they sent you, one they accepted, or new
+  // users/connections added to the network).
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      fetchMyRequests()
-        .then((requestsData) => {
-          setRequests((prev) => (requestsEqual(prev, requestsData) ? prev : requestsData));
-        })
-        .catch(() => {});
+    const timer = window.setInterval(async () => {
+      try {
+        const [requestsData, usersData] = await Promise.all([
+          fetchMyRequests(),
+          fetchUsers(),
+        ]);
+
+        // Always update requests so notification bell and incoming requests are immediately accurate
+        setRequests((prev) => (requestsEqual(prev, requestsData) ? prev : requestsData));
+
+        // Check if users or graph topology has changed compared to currently rendered users
+        setUsers((currentUsers) => {
+          if (currentUsers.length === 0) return usersData;
+          const changed = !usersEqual(currentUsers, usersData);
+          if (changed) {
+            if (autoApplyUpdates) {
+              setHasGraphUpdate(false);
+              return usersData;
+            } else {
+              pendingUsersRef.current = usersData;
+              pendingRequestsRef.current = requestsData;
+              setHasGraphUpdate(true);
+              return currentUsers;
+            }
+          }
+          return currentUsers;
+        });
+      } catch {
+        // Silent failure in background poll
+      }
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [autoApplyUpdates]);
 
   // Selecting a node: if a path is currently open and this node is one of its hops, leave the
   // path (and its highlight) exactly as-is. Otherwise, close any open path and highlight just
@@ -513,6 +595,16 @@ export const useGraphController = (
     handleDeclineRequest,
     handleDisconnect,
     handleUpdateAutoReject,
+    hasGraphUpdate,
+    autoApplyUpdates,
+    setAutoApplyUpdates,
+    handleRefreshGraph,
+    dismissGraphUpdate,
+    newUsers,
+    connectedUserIds,
+    sentRequestUserIds,
+    receivedRequestUserIds,
+    receivedRequestMap,
   };
 };
 

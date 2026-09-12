@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { fullName } from '../services/userService';
+import { fullName, formatRelativeTime } from '../services/userService';
 import type { User, Node } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import {
@@ -14,6 +14,7 @@ import {
 } from '../graph/rendering';
 import type { GNode, GLink, LinkExtra } from '../graph/rendering';
 import { UserCard } from './UserCard';
+import { DraggableCard } from './DraggableCard';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 import {
   SearchIcon,
@@ -75,6 +76,7 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
   const [showSettings, setShowSettings] = useState(false);
   const [showDistanceSlider, setShowDistanceSlider] = useState(false);
   const [showTagFilter, setShowTagFilter] = useState(false);
+  const [frontCard, setFrontCard] = useState<'user' | 'path'>('user');
 
   // Tag filter state
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
@@ -169,6 +171,10 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
         height={graphSize.height}
         graphData={c.graphData}
         backgroundColor="#121214"
+        enableNodeDrag={false}
+        warmupTicks={50}
+        cooldownTicks={100}
+        d3VelocityDecay={0.4}
         onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
         nodeCanvasObject={(node, ctx, globalScale) =>
           drawNode(node, ctx, globalScale, {
@@ -505,7 +511,7 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                width: '340px',
+                width: '380px',
                 ...floatingPanelStyle,
                 padding: '14px',
                 zIndex: 35,
@@ -526,14 +532,15 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
                   onClick={() => c.setRequestsTab('received')}
                   style={{
                     flex: 1,
-                    padding: '6px 10px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
                     border: '1px solid #3a3a40',
                     background: c.requestsTab === 'received' ? '#2a3f5f' : 'transparent',
                     color: '#f0f0f0',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: c.requestsTab === 'received' ? 'bold' : 'normal',
                     cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   Incoming ({c.receivedRequests.length})
@@ -542,17 +549,35 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
                   onClick={() => c.setRequestsTab('sent')}
                   style={{
                     flex: 1,
-                    padding: '6px 10px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
                     border: '1px solid #3a3a40',
                     background: c.requestsTab === 'sent' ? '#2a3f5f' : 'transparent',
                     color: '#f0f0f0',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: c.requestsTab === 'sent' ? 'bold' : 'normal',
                     cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   Outgoing ({c.sentRequests.length})
+                </button>
+                <button
+                  onClick={() => c.setRequestsTab('newUsers')}
+                  style={{
+                    flex: 1,
+                    padding: '6px 4px',
+                    borderRadius: '6px',
+                    border: '1px solid #3a3a40',
+                    background: c.requestsTab === 'newUsers' ? '#2a3f5f' : 'transparent',
+                    color: '#f0f0f0',
+                    fontSize: '11px',
+                    fontWeight: c.requestsTab === 'newUsers' ? 'bold' : 'normal',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  New Users ({c.newUsers.length})
                 </button>
               </div>
 
@@ -601,32 +626,132 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
                       </div>
                     ))
                   )
-                ) : c.sentRequests.length === 0 ? (
-                  <p style={{ color: '#9a9a9a', fontSize: '13px', margin: '8px 0', textAlign: 'center' }}>No outgoing requests</p>
-                ) : (
-                  c.sentRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      style={{
-                        padding: '8px 10px',
-                        border: '1px solid #3a3a40',
-                        borderRadius: '6px',
-                        marginBottom: '6px',
-                        background: 'rgba(255,255,255,0.03)',
-                      }}
-                    >
-                      <button
-                        onClick={() => {
-                          c.focusUser(req.receiver.id);
-                          setShowNotifications(false);
+                ) : c.requestsTab === 'sent' ? (
+                  c.sentRequests.length === 0 ? (
+                    <p style={{ color: '#9a9a9a', fontSize: '13px', margin: '8px 0', textAlign: 'center' }}>No outgoing requests</p>
+                  ) : (
+                    c.sentRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        style={{
+                          padding: '8px 10px',
+                          border: '1px solid #3a3a40',
+                          borderRadius: '6px',
+                          marginBottom: '6px',
+                          background: 'rgba(255,255,255,0.03)',
                         }}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#6ab0ff', fontWeight: 500, textAlign: 'left', fontSize: '13px' }}
                       >
-                        {fullName(req.receiver)}
-                      </button>
-                      <span style={{ fontSize: '11px', color: '#9a9a9a', marginLeft: '8px' }}>Pending</span>
-                    </div>
-                  ))
+                        <button
+                          onClick={() => {
+                            c.focusUser(req.receiver.id);
+                            setShowNotifications(false);
+                          }}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#6ab0ff', fontWeight: 500, textAlign: 'left', fontSize: '13px' }}
+                        >
+                          {fullName(req.receiver)}
+                        </button>
+                        <span style={{ fontSize: '11px', color: '#9a9a9a', marginLeft: '8px' }}>Pending</span>
+                      </div>
+                    ))
+                  )
+                ) : (
+                  c.newUsers.length === 0 ? (
+                    <p style={{ color: '#9a9a9a', fontSize: '13px', margin: '8px 0', textAlign: 'center' }}>No new users yet</p>
+                  ) : (
+                    c.newUsers.map((u) => {
+                      const isConnected = c.connectedUserIds.has(u.id);
+                      const isSent = c.sentRequestUserIds.has(u.id);
+                      const incomingReqId = c.receivedRequestMap.get(u.id);
+
+                      return (
+                        <div
+                          key={u.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '8px 10px',
+                            border: '1px solid #3a3a40',
+                            borderRadius: '6px',
+                            marginBottom: '6px',
+                            background: 'rgba(255,255,255,0.03)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <button
+                              onClick={() => {
+                                c.focusUser(u.id);
+                                setShowNotifications(false);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                cursor: 'pointer',
+                                color: '#6ab0ff',
+                                fontWeight: 500,
+                                textAlign: 'left',
+                                fontSize: '13px',
+                              }}
+                            >
+                              {fullName(u)}
+                            </button>
+                            <span style={{ fontSize: '11px', color: '#9a9a9a' }}>
+                              {formatRelativeTime(u.createdAt)}
+                            </span>
+                          </div>
+                          <div>
+                            {isConnected ? (
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  color: '#4caf50',
+                                  background: 'rgba(76, 175, 80, 0.1)',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid rgba(76, 175, 80, 0.3)',
+                                }}
+                              >
+                                Connected
+                              </span>
+                            ) : incomingReqId ? (
+                              <button
+                                onClick={() => c.handleAcceptRequest(incomingReqId)}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  background: '#2e7d32',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Accept
+                              </button>
+                            ) : isSent ? (
+                              <span style={{ fontSize: '11px', color: '#9a9a9a' }}>Requested</span>
+                            ) : (
+                              <button
+                                onClick={() => c.handleSendRequest(u.id)}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  background: '#2a5f9e',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                + Connect
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )
                 )}
               </div>
             </div>
@@ -782,6 +907,40 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
                 )}
               </div>
 
+              {/* Auto-update graph setting & refresh button */}
+              <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px', marginBottom: '14px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <input
+                    type="checkbox"
+                    checked={c.autoApplyUpdates}
+                    onChange={(e) => c.setAutoApplyUpdates(e.target.checked)}
+                    style={{ accentColor: '#3d8bff', width: 16, height: 16 }}
+                  />
+                  <span>Auto-apply network updates</span>
+                </label>
+                <p style={{ fontSize: '11px', color: '#9a9a9a', margin: '4px 0 0 24px' }}>
+                  When off, shows a notification banner to refresh the graph.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => c.handleRefreshGraph()}
+                  style={{
+                    marginTop: '10px',
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: 'rgba(61, 139, 255, 0.12)',
+                    border: '1px solid #3a3a40',
+                    borderRadius: '6px',
+                    color: '#6ab0ff',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                  }}
+                >
+                  Refresh Graph Now
+                </button>
+              </div>
+
               {/* Logout button */}
               <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px' }}>
                 <button
@@ -805,6 +964,64 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
           )}
         </div>
       </header>
+
+      {/* Graph Update Notification Banner */}
+      {c.hasGraphUpdate && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 72,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            ...floatingPanelStyle,
+            borderColor: '#3d8bff',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(61, 139, 255, 0.3)',
+            padding: '8px 16px',
+            zIndex: 40,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3d8bff', display: 'inline-block', boxShadow: '0 0 6px #3d8bff', flexShrink: 0 }} />
+          <span>Graph has been updated, </span>
+          <button
+            type="button"
+            onClick={c.handleRefreshGraph}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#6ab0ff',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              fontWeight: 600,
+              padding: 0,
+              fontSize: '13px',
+            }}
+          >
+            refresh
+          </button>
+          <button
+            type="button"
+            onClick={c.dismissGraphUpdate}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#9a9a9a',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '0 0 0 4px',
+              display: 'flex',
+              alignItems: 'center',
+              lineHeight: 1,
+            }}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Floating Action Error Toast */}
       {c.actionError && (
@@ -836,80 +1053,79 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
         </div>
       )}
 
-      {/* Floating Selected UserCard Overlay */}
+      {/* Floating Selected UserCard Overlay (Draggable) */}
       {c.selectedUser && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 72,
-            left: 16,
-            width: '380px',
-            maxHeight: 'calc(100vh - 90px)',
-            overflowY: 'auto',
-            ...floatingPanelStyle,
-            zIndex: 25,
-          }}
+        <DraggableCard
+          id="user-card"
+          initialX={20}
+          initialY={72}
+          width={380}
+          dragHandleText="User Profile (drag to move)"
+          zIndex={frontCard === 'user' ? 35 : 25}
+          onBringToFront={() => setFrontCard('user')}
         >
           <UserCard
             user={c.selectedUser}
             relationshipNames={c.getRelationshipNames(c.selectedUser.relationships)}
             onClose={c.clearSelection}
             onSendRequest={() => c.handleSendRequest(c.selectedUser!.id)}
-            showSendRequest={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+            showSendRequest={c.selectedUser.id !== currentUser.id && !c.connectedUserIds.has(c.selectedUser.id)}
+            isRequestPending={c.sentRequestUserIds.has(c.selectedUser.id)}
             onFindPath={() => c.handleFindPath(c.selectedUser!.id)}
-            showFindPath={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+            showFindPath={c.selectedUser.id !== currentUser.id}
             onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}
-            showDisconnect={c.selectedUser.id !== currentUser.id && currentUser.relationships.includes(c.selectedUser.id)}
+            showDisconnect={c.selectedUser.id !== currentUser.id && c.connectedUserIds.has(c.selectedUser.id)}
             onSelectNode={(nodeId: string) => c.focusUser(nodeId)}
             isCurrentUser={c.selectedUser.id === currentUser.id}
+            style={{ background: 'transparent', border: 'none' }}
           />
-        </div>
+        </DraggableCard>
       )}
 
-      {/* Floating Active Path Card */}
+      {/* Floating Active Path Card (Draggable, side-by-side with UserCard) */}
       {c.activePath && c.pathBreadcrumb.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 24,
-            left: 16,
-            maxWidth: '360px',
-            ...floatingPanelStyle,
-            borderColor: '#ff6b6b',
-            padding: '12px 14px',
-            zIndex: 22,
-          }}
+        <DraggableCard
+          id="path-card"
+          initialX={c.selectedUser ? 420 : 20}
+          initialY={72}
+          width={360}
+          dragHandleText="Shortest Path (drag to move)"
+          borderColor="#ff6b6b"
+          zIndex={frontCard === 'path' ? 35 : 26}
+          onBringToFront={() => setFrontCard('path')}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ff6b6b' }}>Shortest Path</span>
-            <button
-              onClick={c.handleClearPath}
-              style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0 }}
-            >
-              <CloseIcon size={16} />
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {c.pathBreadcrumb.map((hop, index) => (
+          <div style={{ padding: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ff6b6b' }}>Shortest Path</span>
               <button
-                key={hop.id}
-                onClick={() => c.focusUser(hop.id)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#6ab0ff',
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                  padding: 0,
-                  textAlign: 'left',
-                  fontSize: '13px',
-                }}
+                onClick={c.handleClearPath}
+                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0 }}
               >
-                {index + 1}. {fullName(hop)}
+                <CloseIcon size={16} />
               </button>
-            ))}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {c.pathBreadcrumb.map((hop, index) => (
+                <button
+                  key={hop.id}
+                  onClick={() => c.focusUser(hop.id)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#6ab0ff',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0,
+                    textAlign: 'left',
+                    fontSize: '13px',
+                  }}
+                >
+                  {index === 0 ? `Start: ${fullName(hop)}` : index === c.pathBreadcrumb.length - 1 ? `Target: ${fullName(hop)}` : `${index}. ${fullName(hop)}`}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        </DraggableCard>
       )}
 
       {/* Floating HUD Controls in Bottom-Right */}

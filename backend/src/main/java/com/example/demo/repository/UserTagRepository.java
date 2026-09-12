@@ -18,7 +18,9 @@ public interface UserTagRepository extends JpaRepository<UserTag, UUID> {
     List<UserTag> findByTaggerIdAndSubjectId(UUID taggerId, UUID subjectId);
 
     @org.springframework.data.jpa.repository.Query("SELECT DISTINCT ut.subject FROM UserTag ut WHERE " +
-            "LOWER(ut.customLabel) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "(ut.tag IS NOT NULL AND LOWER(ut.tag.label) LIKE LOWER(CONCAT('%', :query, '%')))")
-    List<com.example.demo.model.User> findSubjectsByTagQuery(@org.springframework.data.repository.query.Param("query") String query);
+            "(ut.tagger.id = :requestingUserId AND LOWER(ut.customLabel) LIKE LOWER(CONCAT('%', :query, '%'))) OR " +
+            "((ut.tagger.id = ut.subject.id OR ut.tagger.id = :requestingUserId) AND ut.tag IS NOT NULL AND LOWER(ut.tag.label) LIKE LOWER(CONCAT('%', :query, '%')))")
+    List<com.example.demo.model.User> findSubjectsByTagQuery(
+            @org.springframework.data.repository.query.Param("query") String query,
+            @org.springframework.data.repository.query.Param("requestingUserId") UUID requestingUserId);
 }

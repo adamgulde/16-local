@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { fullName, searchUsersApi } from '../services/userService';
+import { fullName, searchUsersApi, formatRelativeTime } from '../services/userService';
 import type { User, Node } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import {
   drawGrid,
   drawNode,
+  drawPathArrow,
   linkColorFor,
   linkLineDashFor,
   paintNodePointerArea,
@@ -240,6 +241,10 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
         height={canvasSize.height}
         graphData={c.graphData}
         backgroundColor="#121214"
+        enableNodeDrag={false}
+        warmupTicks={50}
+        cooldownTicks={100}
+        d3VelocityDecay={0.4}
         onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
         nodeCanvasObject={(node, ctx, globalScale) =>
           drawNode(node, ctx, globalScale, {
@@ -262,6 +267,10 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
         }
         linkLineDash={(link) => linkLineDashFor(link as GLink)}
         nodePointerAreaPaint={paintNodePointerArea}
+        linkCanvasObjectMode={() => 'after'}
+        linkCanvasObject={(link, ctx, globalScale) =>
+          drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
+        }
         onNodeClick={(node) => selectAndShowCard(String(node.id))}
         onBackgroundClick={() => {
           if (activeSheet === 'card') closeCardSheet();
@@ -397,6 +406,134 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           <SettingsIcon size={20} />
         </button>
       </div>
+
+      {/* GRAPH UPDATE NOTIFICATION BANNER */}
+      {c.hasGraphUpdate && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(max(12px, env(safe-area-inset-top, 12px)) + 52px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            background: 'rgba(28, 28, 30, 0.96)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid #3d8bff',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(61, 139, 255, 0.3)',
+            borderRadius: '24px',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: '#f0f0f0',
+            fontSize: '13px',
+            maxWidth: 'calc(100vw - 32px)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3d8bff', display: 'inline-block', boxShadow: '0 0 6px #3d8bff', flexShrink: 0 }} />
+          <span>Graph has been updated, </span>
+          <button
+            type="button"
+            onClick={c.handleRefreshGraph}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#6ab0ff',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              fontWeight: 600,
+              padding: 0,
+              fontSize: '13px',
+            }}
+          >
+            refresh
+          </button>
+          <button
+            type="button"
+            onClick={c.dismissGraphUpdate}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#9a9a9a',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '0 0 0 4px',
+              display: 'flex',
+              alignItems: 'center',
+              lineHeight: 1,
+            }}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ACTIVE PATH FLOATING BANNER */}
+      {c.activePath && !c.hasGraphUpdate && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(max(12px, env(safe-area-inset-top, 12px)) + 52px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            background: 'rgba(38, 16, 16, 0.96)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid #ff6b6b',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(255, 107, 107, 0.3)',
+            borderRadius: '24px',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: '#f0f0f0',
+            fontSize: '13px',
+            maxWidth: 'calc(100vw - 32px)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff6b6b', display: 'inline-block', boxShadow: '0 0 6px #ff6b6b', flexShrink: 0 }} />
+          <span>Active Path: {c.pathBreadcrumb.length - 1} hops</span>
+          <button
+            type="button"
+            onClick={() => setActiveSheet('path')}
+            style={{
+              background: 'rgba(255, 107, 107, 0.2)',
+              border: '1px solid rgba(255, 107, 107, 0.5)',
+              borderRadius: '12px',
+              padding: '2px 8px',
+              color: '#ff9e9e',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '12px',
+            }}
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={c.handleClearPath}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#9a9a9a',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '0 0 0 4px',
+              display: 'flex',
+              alignItems: 'center',
+              lineHeight: 1,
+            }}
+            title="Clear path"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* BOTTOM-LEFT CORNER: Distance Controls & Path Chip */}
       <div
@@ -566,7 +703,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           placeholder="Search users or tags..."
           value={c.searchTerm}
           onChange={(e) => c.setSearchTerm(e.target.value)}
-          style={{ padding: '12px', width: '100%', boxSizing: 'border-box', marginBottom: '10px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '8px', fontSize: '14px' }}
+          style={{ padding: '12px', width: '100%', boxSizing: 'border-box', marginBottom: '10px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '8px', fontSize: '16px' }}
         />
         <div style={{ display: 'flex', gap: '16px', marginBottom: '14px', fontSize: '13px', color: '#9a9a9a' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', minHeight: 36 }}>
@@ -726,6 +863,12 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           >
             Outgoing ({c.sentRequests.length})
           </button>
+          <button
+            onClick={() => c.setRequestsTab('newUsers')}
+            style={tabButtonStyle(c.requestsTab === 'newUsers')}
+          >
+            New Users ({c.newUsers.length})
+          </button>
         </div>
         {c.requestsTab === 'received' ? (
           c.receivedRequests.length === 0 ? (
@@ -752,7 +895,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
               </div>
             ))
           )
-        ) : (
+        ) : c.requestsTab === 'sent' ? (
           c.sentRequests.length === 0 ? (
             <div style={{ color: '#9a9a9a', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>
               No outgoing requests
@@ -769,6 +912,102 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
                 <div style={{ color: '#9a9a9a', fontSize: '12px', marginTop: '4px' }}>Pending acceptance</div>
               </div>
             ))
+          )
+        ) : (
+          c.newUsers.length === 0 ? (
+            <div style={{ color: '#9a9a9a', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>
+              No new users yet
+            </div>
+          ) : (
+            c.newUsers.map((u) => {
+              const isConnected = c.connectedUserIds.has(u.id);
+              const isSent = c.sentRequestUserIds.has(u.id);
+              const incomingReqId = c.receivedRequestMap.get(u.id);
+
+              return (
+                <div
+                  key={u.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    border: '1px solid #3a3a40',
+                    margin: '6px 0',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#242426',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <button
+                      onClick={() => focusAndShowCard(u.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#6ab0ff',
+                        fontWeight: 'bold',
+                        textDecoration: 'underline',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        padding: 0,
+                        textAlign: 'left',
+                      }}
+                    >
+                      {fullName(u)}
+                    </button>
+                    <span style={{ color: '#9a9a9a', fontSize: '12px' }}>
+                      {formatRelativeTime(u.createdAt)}
+                    </span>
+                  </div>
+                  <div>
+                    {isConnected ? (
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          color: '#4caf50',
+                          background: 'rgba(76, 175, 80, 0.1)',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(76, 175, 80, 0.3)',
+                        }}
+                      >
+                        Connected
+                      </span>
+                    ) : incomingReqId ? (
+                      <button
+                        style={{
+                          ...fabActionStyle,
+                          minHeight: 36,
+                          padding: '0 12px',
+                          background: '#2a5f9e',
+                          borderColor: '#3d8bff',
+                          color: '#fff',
+                        }}
+                        onClick={() => c.handleAcceptRequest(incomingReqId)}
+                      >
+                        Accept
+                      </button>
+                    ) : isSent ? (
+                      <span style={{ fontSize: '12px', color: '#9a9a9a' }}>Pending</span>
+                    ) : (
+                      <button
+                        style={{
+                          ...fabActionStyle,
+                          minHeight: 36,
+                          padding: '0 12px',
+                          background: '#2a5f9e',
+                          borderColor: '#3d8bff',
+                          color: '#fff',
+                        }}
+                        onClick={() => c.handleSendRequest(u.id)}
+                      >
+                        + Connect
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )
         )}
       </BottomSheet>
@@ -866,6 +1105,25 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           />
           Show pending connections
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: 44, cursor: 'pointer', fontSize: '13px' }}>
+          <input
+            type="checkbox"
+            checked={c.autoApplyUpdates}
+            onChange={(e) => c.setAutoApplyUpdates(e.target.checked)}
+            style={{ accentColor: '#3d8bff', width: 18, height: 18 }}
+          />
+          Auto-apply network updates
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            c.handleRefreshGraph();
+            setActiveSheet(null);
+          }}
+          style={{ ...fabActionStyle, marginTop: '8px', width: '100%', borderColor: '#3a3a40', color: '#6ab0ff', background: 'rgba(61, 139, 255, 0.12)' }}
+        >
+          Refresh Graph Now
+        </button>
         <button onClick={onLogout} style={{ ...fabActionStyle, marginTop: '16px', width: '100%', borderColor: '#d32f2f', color: '#ff6b6b', background: 'rgba(211, 47, 47, 0.12)' }}>
           Log out
         </button>
@@ -888,11 +1146,12 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
               relationshipNames={c.getRelationshipNames(c.selectedUser.relationships)}
               onClose={closeCardSheet}
               onSendRequest={() => c.handleSendRequest(c.selectedUser!.id)}
-              showSendRequest={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+              showSendRequest={c.selectedUser.id !== currentUser.id && !c.connectedUserIds.has(c.selectedUser.id)}
+              isRequestPending={c.sentRequestUserIds.has(c.selectedUser.id)}
               onFindPath={() => findPathAndShowSheet(c.selectedUser!.id)}
-              showFindPath={c.selectedUser.id !== currentUser.id && !currentUser.relationships.includes(c.selectedUser.id)}
+              showFindPath={c.selectedUser.id !== currentUser.id}
               onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}
-              showDisconnect={c.selectedUser.id !== currentUser.id && currentUser.relationships.includes(c.selectedUser.id)}
+              showDisconnect={c.selectedUser.id !== currentUser.id && c.connectedUserIds.has(c.selectedUser.id)}
               onSelectNode={(nodeId: string) => selectAndShowCard(nodeId)}
               isCurrentUser={c.selectedUser.id === currentUser.id}
             />
