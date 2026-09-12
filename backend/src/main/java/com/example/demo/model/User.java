@@ -39,6 +39,15 @@ public class User {
     /** Maximum degree of separation allowed for incoming connection requests; null means accept all. */
     private Integer maxConnectionDegree;
 
+    /** Whether this user is a default seeded demo user. Default users auto-accept connection requests. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean defaultUser = false;
+
+    public boolean isDefaultUser() {
+        return defaultUser || (phoneNumber != null && phoneNumber.startsWith("+1 555-000-"));
+    }
+
     @ManyToOne(optional = false)
     @JoinColumn(name = "neighborhood_curve_index")
     private Neighborhood neighborhood;

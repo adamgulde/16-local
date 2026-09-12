@@ -13,9 +13,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 @SpringBootApplication
 public class DemoApplication {
@@ -81,6 +79,49 @@ public class DemoApplication {
                                     PlacementService placementService) {
         return args -> {
             if (userRepository.count() > 0) {
+                List<User> existing = userRepository.findAll();
+                Map<Integer, User> userByNum = new HashMap<>();
+
+                for (User u : existing) {
+                    int num = getNumberForUser(u);
+                    if (num >= 0 && num <= 105) {
+                        String canonicalPhone = String.format("+1 555-000-%04d", num);
+                        u.setPhoneNumber(canonicalPhone);
+                        u.setDefaultUser(true);
+                        if (u.getInviteCode() == null || u.getInviteCode().isBlank()) {
+                            u.setInviteCode(String.format("INV%04d", num));
+                        }
+                        userRepository.save(u);
+                        userByNum.put(num, u);
+                    }
+                }
+
+                User anchor = userByNum.get(1);
+                if (anchor == null && !existing.isEmpty()) {
+                    anchor = existing.get(0);
+                }
+
+                if (anchor != null) {
+                    for (int i = 0; i <= 105; i++) {
+                        if (!userByNum.containsKey(i)) {
+                            String[] name = nameFor(i);
+                            User u = User.builder()
+                                    .firstName(name[0])
+                                    .lastName(name[1])
+                                    .phoneNumber(String.format("+1 555-000-%04d", i))
+                                    .inviteCode(String.format("INV%04d", i))
+                                    .defaultUser(true)
+                                    .createdAt(java.time.Instant.now())
+                                    .build();
+                            u = placementService.joinNeighborhood(u, anchor.getNeighborhood());
+                            userRepository.save(u);
+                            User connectTo = userByNum.get(i > 0 ? i - 1 : 1);
+                            if (connectTo == null) connectTo = anchor;
+                            connectionService.connect(u, connectTo);
+                            userByNum.put(i, u);
+                        }
+                    }
+                }
                 return;
             }
 
@@ -93,6 +134,19 @@ public class DemoApplication {
                 nextNumber = seedNeighborhood(nextNumber, size, users, placementService,
                         connectionRequestRepository, connectionService);
             }
+
+            // Seed User 0 (+1 555-000-0000) and connect to User 1
+            User user0 = User.builder()
+                    .firstName("User")
+                    .lastName("0")
+                    .phoneNumber("+1 555-000-0000")
+                    .inviteCode("INV0000")
+                    .defaultUser(true)
+                    .createdAt(java.time.Instant.now())
+                    .build();
+            user0 = placementService.joinNeighborhood(user0, users.get(0).getNeighborhood());
+            userRepository.save(user0);
+            connectionService.connect(user0, users.get(0));
 
             // Extra hand-picked edges layered on top of the guaranteed sponsor tree, purely for
             // a richer/denser social graph (multiple routes between members, not just one).
@@ -132,6 +186,34 @@ public class DemoApplication {
             connect(users, connectionService, 66, 74);
             connect(users, connectionService, 74, 86);
         };
+    }
+
+    public static int getNumberForUser(User u) {
+        if ("User".equalsIgnoreCase(u.getFirstName())) {
+            try {
+                return Integer.parseInt(u.getLastName().trim());
+            } catch (Exception ignored) {}
+        }
+        for (int i = 0; i < CHARACTER_NAMES.length; i++) {
+            if (CHARACTER_NAMES[i][0].equalsIgnoreCase(u.getFirstName())
+                    && CHARACTER_NAMES[i][1].equalsIgnoreCase(u.getLastName())) {
+                return i + 6;
+            }
+        }
+        if (u.getPhoneNumber() != null && u.getPhoneNumber().matches("^\\+?1?555000\\d{4}$|^\\+1 555-000-\\d{4}$")) {
+            String digits = u.getPhoneNumber().replaceAll("\\D", "");
+            if (digits.length() >= 4) {
+                try {
+                    return Integer.parseInt(digits.substring(digits.length() - 4));
+                } catch (Exception ignored) {}
+            }
+        }
+        if (u.getPhoneNumber() != null && u.getPhoneNumber().startsWith("1000000")) {
+            try {
+                return Integer.parseInt(u.getPhoneNumber()) - 100000000;
+            } catch (Exception ignored) {}
+        }
+        return -1;
     }
 
     /**
@@ -175,6 +257,7 @@ public class DemoApplication {
                     .lastName(name[1])
                     .phoneNumber(String.format("+1 555-000-%04d", number))
                     .inviteCode("INV" + String.format("%04d", number))
+                    .defaultUser(true)
                     .createdAt(java.time.Instant.now())
                     .build();
 

@@ -9,6 +9,7 @@ export interface User {
   relationships: string[];
   inviteCode?: string;
   maxConnectionDegree?: number | null;
+  defaultUser?: boolean;
 }
 
 export interface Node {

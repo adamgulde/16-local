@@ -18,7 +18,8 @@ public record UserResponse(
         String bio,
         List<UUID> relationships,
         String inviteCode,
-        Integer maxConnectionDegree
+        Integer maxConnectionDegree,
+        Boolean defaultUser
 ) {
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber) {
         return new UserResponse(
@@ -29,7 +30,8 @@ public record UserResponse(
                 user.getBio() == null ? "" : user.getBio(),
                 relationships,
                 user.getInviteCode(),
-                user.getMaxConnectionDegree()
+                user.getMaxConnectionDegree(),
+                user.isDefaultUser()
         );
     }
 }

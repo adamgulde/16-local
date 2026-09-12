@@ -26,6 +26,14 @@ const primaryButtonStyle: CSSProperties = {
   border: '1px solid #3d8bff',
   color: 'white',
   fontWeight: 'bold',
+  padding: '8px 16px',
+  minHeight: 44,
+  borderRadius: '8px',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  touchAction: 'manipulation',
 };
 
 // Name, then Bio, then your own tags/notes on this person, then the — potentially long — public
@@ -77,7 +85,7 @@ export const UserCard = ({
         <button
           onClick={onClose}
           aria-label="Close"
-          style={{ minWidth: 32, minHeight: 32, background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ minWidth: 44, minHeight: 44, background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <CloseIcon size={18} />
         </button>
@@ -99,7 +107,7 @@ export const UserCard = ({
           <button
             key={relId}
             onClick={() => onSelectNode(relId)}
-            style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', textDecoration: 'underline', padding: '2px 0', textAlign: 'left' }}
+            style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', textDecoration: 'underline', padding: '6px 0', minHeight: 36, textAlign: 'left' }}
           >
             {relationshipNames[index]}
           </button>
@@ -131,11 +139,13 @@ export const UserCard = ({
                   background: 'rgba(211, 47, 47, 0.15)',
                   border: '1px solid #d32f2f',
                   color: '#ff6b6b',
-                  borderRadius: '4px',
-                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  minHeight: 44,
                   fontSize: '13px',
                   cursor: 'pointer',
                   fontWeight: 500,
+                  touchAction: 'manipulation',
                 }}
               >
                 <DisconnectIcon size={16} /> Disconnect

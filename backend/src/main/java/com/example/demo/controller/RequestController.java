@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -40,9 +41,24 @@ public class RequestController {
         User sender = userService.getUserById(senderId);
         User receiver = userService.getUserById(receiverId);
 
+        // If a pending request already exists in reverse (receiver sent to sender), accept it!
+        Optional<ConnectionRequest> reversePending = requestRepository.findBySenderOrReceiver(sender, sender).stream()
+                .filter(r -> r.getStatus() == ConnectionRequest.RequestStatus.PENDING
+                        && r.getSender().getId().equals(receiverId)
+                        && r.getReceiver().getId().equals(senderId))
+                .findFirst();
+        if (reversePending.isPresent()) {
+            ConnectionRequest req = reversePending.get();
+            req.setStatus(ConnectionRequest.RequestStatus.ACCEPTED);
+            requestRepository.save(req);
+            connectionService.connect(sender, receiver);
+            return ResponseEntity.noContent().build();
+        }
+
         boolean alreadyPending = requestRepository.findBySenderOrReceiver(sender, sender).stream()
                 .anyMatch(r -> r.getStatus() == ConnectionRequest.RequestStatus.PENDING
-                        && (r.getReceiver().getId().equals(receiverId) || r.getSender().getId().equals(receiverId)));
+                        && r.getSender().getId().equals(senderId)
+                        && r.getReceiver().getId().equals(receiverId));
         if (alreadyPending) {
             throw new BadRequestException("A pending request already exists between these users");
         }
@@ -60,6 +76,19 @@ public class RequestController {
                 requestRepository.save(rejected);
                 throw new BadRequestException("This user is not accepting requests from users more than " + maxDegree + " degree(s) away");
             }
+        }
+
+        // Testing requirement: all default users automatically accept requests.
+        // Note that new users who register should NOT under any circumstance default-accept requests.
+        if (receiver.isDefaultUser()) {
+            ConnectionRequest connRequest = ConnectionRequest.builder()
+                    .sender(sender)
+                    .receiver(receiver)
+                    .status(ConnectionRequest.RequestStatus.ACCEPTED)
+                    .build();
+            requestRepository.save(connRequest);
+            connectionService.connect(sender, receiver);
+            return ResponseEntity.noContent().build();
         }
 
         ConnectionRequest connRequest = ConnectionRequest.builder()

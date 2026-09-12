@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 
-const MOBILE_QUERY = '(pointer: coarse) and (max-width: 900px)';
+const MOBILE_QUERY = '(max-width: 900px), (pointer: coarse) and (max-width: 1024px)';
 
-// Pointer capability, not just width, so a touch-primary phone is detected correctly while a
-// desktop browser window resized to be narrow still gets the desktop UI. Live-updates on
-// resize/rotation via the media query's own change event, rather than a one-time check.
+// True for smartphones, tablets, or any desktop browser window resized to <= 900px.
+// Live-updates on window resize/rotation via the media query's own change event.
 export const useIsMobile = (): boolean => {
   const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
 
