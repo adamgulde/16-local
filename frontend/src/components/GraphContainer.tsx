@@ -27,6 +27,8 @@ import {
   SlidersIcon,
   CloseIcon,
   TagIcon,
+  ColumnsIcon,
+  GridIcon,
 } from './Icons';
 import { fetchAllTags, type Tag } from '../services/tagService';
 import { searchUsersApi } from '../services/userService';
@@ -34,7 +36,11 @@ import { searchUsersApi } from '../services/userService';
 interface GraphContainerProps {
   currentUser: User;
   onLogout: () => void;
+  onSwitchToColumns?: () => void;
+  initialFocusUserId?: string | null;
+  initialFindPathTargetId?: string | null;
 }
+
 
 const ZOOM_STEP_FACTOR = 1.6;
 
@@ -64,9 +70,27 @@ const hudBtnStyle: CSSProperties = {
   transition: 'background 0.2s',
 };
 
-export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) => {
+export const GraphContainer = ({
+  currentUser,
+  onLogout,
+  onSwitchToColumns,
+  initialFocusUserId,
+  initialFindPathTargetId,
+}: GraphContainerProps) => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(currentUser, fgRef);
+
+  useEffect(() => {
+    if (initialFocusUserId && c.users.length > 0) {
+      c.handleSelectSearchResult(initialFocusUserId);
+    }
+  }, [initialFocusUserId, c.users.length]);
+
+  useEffect(() => {
+    if (initialFindPathTargetId && c.users.length > 0) {
+      c.handleFindPath(initialFindPathTargetId);
+    }
+  }, [initialFindPathTargetId, c.users.length]);
 
   const graphResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [graphSize, setGraphSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -224,6 +248,62 @@ export const GraphContainer = ({ currentUser, onLogout }: GraphContainerProps) =
           pointerEvents: 'none',
         }}
       >
+        {/* View Switcher Pill */}
+        {onSwitchToColumns && (
+          <div
+            style={{
+              ...floatingPanelStyle,
+              pointerEvents: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '3px',
+              gap: '2px',
+            }}
+          >
+            <button
+              type="button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                background: '#3d8bff',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'default',
+              }}
+              title="Graph View (Active)"
+            >
+              <GridIcon size={14} />
+              Graph
+            </button>
+            <button
+              type="button"
+              onClick={onSwitchToColumns}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'transparent',
+                color: '#9a9a9a',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Switch to Columns View"
+            >
+              <ColumnsIcon size={14} />
+              Columns
+            </button>
+          </div>
+        )}
+
         {/* Search Bar with Names & Tags checkboxes */}
         <div style={{ ...floatingPanelStyle, pointerEvents: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '10px', position: 'relative', minWidth: '320px', maxWidth: '480px', flex: '1 1 auto' }}>
           <SearchIcon size={18} color="#9a9a9a" />

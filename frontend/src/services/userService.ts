@@ -115,3 +115,24 @@ export const searchUsersApi = async (query: string, searchNames = true, searchTa
   });
   return response.data.map((hit) => hit.user);
 };
+
+export interface FriendSummary extends User {
+  connectionsCount: number;
+  mutualFriendsCount: number;
+  isConnectedToViewer: boolean;
+}
+
+export type FriendSortOption = 'name' | 'connections' | 'mutualFriends';
+export type SortOrder = 'asc' | 'desc';
+
+export const fetchUserFriends = async (
+  userId: string,
+  sortBy: FriendSortOption = 'name',
+  order?: SortOrder
+): Promise<FriendSummary[]> => {
+  const response = await apiClient.get<FriendSummary[]>(`${API_URL}/${userId}/friends`, {
+    params: { sortBy, ...(order ? { order } : {}) }
+  });
+  return response.data;
+};
+

@@ -25,6 +25,8 @@ import {
   MaximizeIcon,
   SlidersIcon,
   TagIcon,
+  ColumnsIcon,
+  GridIcon,
 } from './Icons';
 import { fetchAllTags, type Tag } from '../services/tagService';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
@@ -32,7 +34,11 @@ import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 interface MobileGraphViewProps {
   currentUser: User;
   onLogout: () => void;
+  onSwitchToColumns?: () => void;
+  initialFocusUserId?: string | null;
+  initialFindPathTargetId?: string | null;
 }
+
 
 type Sheet = 'card' | 'path' | 'notifications' | 'settings' | 'search' | 'tagFilter' | null;
 
@@ -95,9 +101,27 @@ const fabActionStyle: CSSProperties = {
   touchAction: 'manipulation',
 };
 
-export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps) => {
+export const MobileGraphView = ({
+  currentUser,
+  onLogout,
+  onSwitchToColumns,
+  initialFocusUserId,
+  initialFindPathTargetId,
+}: MobileGraphViewProps) => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(currentUser, fgRef);
+
+  useEffect(() => {
+    if (initialFocusUserId && c.users.length > 0) {
+      c.handleSelectSearchResult(initialFocusUserId);
+    }
+  }, [initialFocusUserId, c.users.length]);
+
+  useEffect(() => {
+    if (initialFindPathTargetId && c.users.length > 0) {
+      c.handleFindPath(initialFindPathTargetId);
+    }
+  }, [initialFindPathTargetId, c.users.length]);
 
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -278,7 +302,7 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
         }}
       />
 
-      {/* TOP-LEFT CORNER: Search & Tag Filter */}
+      {/* TOP-LEFT CORNER: Search & Tag Filter & View Switcher */}
       <div
         style={{
           position: 'absolute',
@@ -290,6 +314,21 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
           zIndex: 25,
         }}
       >
+        {onSwitchToColumns && (
+          <button
+            style={{
+              ...cornerButtonStyle,
+              background: 'rgba(61, 139, 255, 0.18)',
+              borderColor: '#3d8bff',
+              color: '#6ab0ff',
+            }}
+            onClick={onSwitchToColumns}
+            aria-label="Switch to Miller Columns"
+            title="Columns View"
+          >
+            <ColumnsIcon size={20} />
+          </button>
+        )}
         <button
           style={cornerButtonStyle}
           onClick={() => {
@@ -1014,6 +1053,35 @@ export const MobileGraphView = ({ currentUser, onLogout }: MobileGraphViewProps)
 
       {/* Settings sheet */}
       <BottomSheet open={activeSheet === 'settings'} onClose={() => setActiveSheet(null)} title="Settings">
+        {/* Interface View Switcher */}
+        {onSwitchToColumns && (
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>
+              Interface View
+            </label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                style={tabButtonStyle(true)}
+                title="Interactive Graph View"
+              >
+                <GridIcon size={14} style={{ marginRight: 6 }} /> Graph
+              </button>
+              <button
+                type="button"
+                style={tabButtonStyle(false)}
+                onClick={() => {
+                  setActiveSheet(null);
+                  onSwitchToColumns();
+                }}
+                title="Traditional Miller Columns View"
+              >
+                <ColumnsIcon size={14} style={{ marginRight: 6 }} /> Columns
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Auto-Reject Threshold */}
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>
