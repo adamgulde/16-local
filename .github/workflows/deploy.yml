@@ -165,5 +165,12 @@ jobs:
             EOF
 
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull || true
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+            if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans; then
+              echo "=========================================="
+              echo "DEPLOYMENT FAILED: Dumping container logs"
+              echo "=========================================="
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 backend || true
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50 proxy || true
+              exit 1
+            fi
             docker system prune -f
