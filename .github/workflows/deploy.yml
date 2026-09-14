@@ -119,9 +119,17 @@ jobs:
           envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY
           script: |
             set -e
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_STAGING || secrets.DEPLOY_PATH || '/opt/app-staging' }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_STAGING || secrets.DEPLOY_PATH || '/opt/app' }}"
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              if [ -d "/opt/app/.git" ]; then
+                DEPLOY_DIR="/opt/app"
+              elif [ -d "$HOME/app/.git" ]; then
+                DEPLOY_DIR="$HOME/app"
+              fi
+            fi
             echo "Deploying Staging to $DEPLOY_DIR..."
             cd "$DEPLOY_DIR"
+            git config --global --add safe.directory "$DEPLOY_DIR" || true
             git fetch origin staging
             git checkout staging
             git pull origin staging
@@ -194,9 +202,17 @@ jobs:
           envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY
           script: |
             set -e
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app-prod' }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app' }}"
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              if [ -d "/opt/app/.git" ]; then
+                DEPLOY_DIR="/opt/app"
+              elif [ -d "$HOME/app/.git" ]; then
+                DEPLOY_DIR="$HOME/app"
+              fi
+            fi
             echo "Deploying Production to $DEPLOY_DIR..."
             cd "$DEPLOY_DIR"
+            git config --global --add safe.directory "$DEPLOY_DIR" || true
             git fetch origin main
             git checkout main
             git pull origin main
