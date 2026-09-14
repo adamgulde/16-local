@@ -2,16 +2,22 @@ services:
   backend:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
-      - DB_POOL_MAX_SIZE=15
+      - DB_POOL_MAX_SIZE=10
     deploy:
       resources:
         limits:
-          cpus: '1.50'
-          memory: 1536M
+          cpus: '0.80'
+          memory: 1100M
+        reservations:
+          cpus: '0.10'
+          memory: 256M
 
   frontend:
     deploy:
       resources:
         limits:
-          cpus: '1.00'
-          memory: 512M
+          cpus: '0.30'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
