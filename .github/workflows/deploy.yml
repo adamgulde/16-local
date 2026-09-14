@@ -40,12 +40,14 @@ jobs:
           gradle test --no-daemon
 
       - name: Build Backend Jar
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         run: |
           cd backend
           gradle bootJar -x test --no-daemon
 
   ci-frontend:
     name: Frontend Lint & Build
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
