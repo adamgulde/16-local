@@ -5,6 +5,7 @@ import { MobileGraphView } from './components/MobileGraphView';
 import { MillerColumnsView } from './components/columns/MillerColumnsView';
 import { Login } from './components/auth/Login';
 import { Register } from './components/auth/Register';
+import { NotFound } from './components/NotFound';
 import type { User } from './services/userService';
 import { loadSessionUser, clearSession } from './services/authService';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -76,6 +77,7 @@ function App() {
           <Route path="/register" element={
             currentUser ? <Navigate to="/" replace /> : <Register onLogin={setCurrentUser} />
           } />
+          <Route path="*" element={<NotFound currentUser={currentUser} />} />
         </Routes>
       </div>
     </BrowserRouter>
