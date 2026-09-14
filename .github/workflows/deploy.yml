@@ -112,11 +112,26 @@ jobs:
             set -e
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app' }}"
             if [ ! -d "$DEPLOY_DIR/.git" ]; then
-              if [ -d "/opt/app/.git" ]; then
-                DEPLOY_DIR="/opt/app"
-              elif [ -d "$HOME/app/.git" ]; then
-                DEPLOY_DIR="$HOME/app"
+              echo "Searching for git repository on host..."
+              for candidate in "$DEPLOY_DIR/16" "/opt/16" "/opt/app" "/opt/app/16" "$HOME/16" "$HOME/app" "/root/16"; do
+                if [ -d "$candidate/.git" ]; then
+                  DEPLOY_DIR="$candidate"
+                  echo "Found repository at $DEPLOY_DIR"
+                  break
+                fi
+              done
+              if [ ! -d "$DEPLOY_DIR/.git" ]; then
+                AUTO_FOUND=$(find /opt /root /home -maxdepth 3 -name ".git" -type d 2>/dev/null | head -n 1)
+                if [ -n "$AUTO_FOUND" ]; then
+                  DEPLOY_DIR=$(dirname "$AUTO_FOUND")
+                  echo "Auto-detected repository at $DEPLOY_DIR"
+                fi
               fi
+            fi
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              echo "FATAL: Could not locate git repository on host in $DEPLOY_DIR, /opt, or $HOME."
+              ls -la "$DEPLOY_DIR" 2>/dev/null || true
+              exit 1
             fi
             echo "Deploying Production to $DEPLOY_DIR..."
             cd "$DEPLOY_DIR"
