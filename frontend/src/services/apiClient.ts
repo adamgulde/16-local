@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const apiClient = axios.create();
+// Vite convention (import.meta.env) with fallback to relative path (empty base)
+const rawBaseURL = import.meta.env.VITE_API_BASE_URL;
+const baseURL = rawBaseURL ? rawBaseURL.replace(/\/+$/, '') : '';
+
+export const apiClient = axios.create({
+  baseURL: baseURL || undefined,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('authToken');

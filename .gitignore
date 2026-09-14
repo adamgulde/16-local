@@ -26,3 +26,12 @@ out/
 # Docker
 postgres_data/
 .env
+
+.md
+
+# SSL / TLS certificates & keys
+certs/
+*.key
+*.crt
+*.pem
+*.cert

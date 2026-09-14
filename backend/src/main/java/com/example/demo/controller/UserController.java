@@ -1,5 +1,6 @@
 package com.example.demo.controller;
 
+import com.example.demo.dto.FriendSummaryResponse;
 import com.example.demo.dto.ReachResponse;
 import com.example.demo.dto.SearchResult;
 import com.example.demo.dto.UserResponse;
@@ -114,4 +115,29 @@ public class UserController {
         double percentage = others == 0 ? 0.0 : (reachable * 100.0) / others;
         return new ReachResponse(reachable, totalUsers, percentage);
     }
+
+    /**
+     * Generic endpoint for retrieving friends of a user with sorting and calculated mutual metrics.
+     * Supports sorting by: "name" (default), "connections", "mutualFriends".
+     * Supports order: "asc", "desc".
+     */
+    @GetMapping("/{id}/friends")
+    public List<FriendSummaryResponse> getUserFriends(
+            @PathVariable String id,
+            @RequestParam(required = false, defaultValue = "name") String sortBy,
+            @RequestParam(required = false) String order,
+            @AuthenticationPrincipal UUID requestingUserId) {
+        UUID targetId;
+        if ("me".equalsIgnoreCase(id)) {
+            targetId = requestingUserId;
+        } else {
+            try {
+                targetId = UUID.fromString(id);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("Invalid user ID: " + id);
+            }
+        }
+        return connectionService.getUserFriends(targetId, requestingUserId, sortBy, order);
+    }
 }
+

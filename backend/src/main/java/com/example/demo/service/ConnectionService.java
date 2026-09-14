@@ -1,8 +1,10 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.FriendSummaryResponse;
 import com.example.demo.model.Connection;
 import com.example.demo.model.User;
 import com.example.demo.repository.ConnectionRepository;
+import com.example.demo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,7 @@ import java.util.*;
 public class ConnectionService {
 
     private final ConnectionRepository connectionRepository;
+    private final UserRepository userRepository;
 
     /** Idempotent: creating a connection that already exists (in either order) is a no-op. */
     public void connect(User a, User b) {
@@ -151,4 +154,102 @@ public class ConnectionService {
         }
         return Integer.MAX_VALUE;
     }
+
+    public Set<UUID> getMutualFriendIds(UUID user1, UUID user2) {
+        if (user1 == null || user2 == null || user1.equals(user2)) {
+            return Collections.emptySet();
+        }
+        Set<UUID> n1 = new HashSet<>(getNeighborIds(user1));
+        Set<UUID> n2 = new HashSet<>(getNeighborIds(user2));
+        n1.retainAll(n2);
+        n1.remove(user1);
+        n1.remove(user2);
+        return n1;
+    }
+
+    public List<FriendSummaryResponse> getUserFriends(UUID targetUserId, UUID viewerId, String sortBy, String order) {
+        List<UUID> neighborIds = getNeighborIds(targetUserId);
+        if (neighborIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Do not include the logged in user in the friend's lists or friends of friends lists
+        if (viewerId != null) {
+            neighborIds = neighborIds.stream()
+                    .filter(id -> !id.equals(viewerId))
+                    .toList();
+            if (neighborIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+        }
+
+        Map<UUID, List<UUID>> adjacency = buildAdjacency();
+        Set<UUID> viewerNeighbors = viewerId != null
+                ? new HashSet<>(adjacency.getOrDefault(viewerId, List.of()))
+                : Collections.emptySet();
+
+        List<User> users = userRepository.findAllById(neighborIds);
+        List<FriendSummaryResponse> responses = new ArrayList<>(users.size());
+
+        for (User user : users) {
+            UUID friendId = user.getId();
+            List<UUID> friendRelationships = adjacency.getOrDefault(friendId, List.of());
+            int connectionsCount = friendRelationships.size();
+
+            int mutualFriendsCount = 0;
+            if (viewerId != null && !friendId.equals(viewerId)) {
+                Set<UUID> friendNeighbors = new HashSet<>(friendRelationships);
+                mutualFriendsCount = (int) friendNeighbors.stream()
+                        .filter(id -> !id.equals(viewerId) && !id.equals(friendId) && viewerNeighbors.contains(id))
+                        .count();
+            }
+
+            boolean isConnectedToViewer = viewerId != null && (friendId.equals(viewerId) || viewerNeighbors.contains(friendId));
+            boolean includePhoneNumber = isConnectedToViewer;
+
+            responses.add(FriendSummaryResponse.from(
+                    user,
+                    friendRelationships,
+                    includePhoneNumber,
+                    connectionsCount,
+                    mutualFriendsCount,
+                    isConnectedToViewer
+            ));
+        }
+
+        String effectiveSort = sortBy != null ? sortBy.toLowerCase() : "name";
+        boolean desc;
+        if (order != null) {
+            desc = "desc".equalsIgnoreCase(order);
+        } else {
+            desc = "connections".equals(effectiveSort) || "mutualfriends".equals(effectiveSort);
+        }
+
+        Comparator<FriendSummaryResponse> nameComparator = Comparator.comparing(
+                f -> {
+                    String first = f.firstName() != null ? f.firstName() : "";
+                    String last = f.lastName() != null ? f.lastName() : "";
+                    return (first + " " + last).trim().toLowerCase();
+                },
+                Comparator.naturalOrder()
+        );
+
+        Comparator<FriendSummaryResponse> comparator;
+        if ("connections".equals(effectiveSort)) {
+            comparator = Comparator.comparingInt(FriendSummaryResponse::connectionsCount);
+            if (desc) comparator = comparator.reversed();
+            comparator = comparator.thenComparing(nameComparator);
+        } else if ("mutualfriends".equals(effectiveSort)) {
+            comparator = Comparator.comparingInt(FriendSummaryResponse::mutualFriendsCount);
+            if (desc) comparator = comparator.reversed();
+            comparator = comparator.thenComparing(nameComparator);
+        } else {
+            comparator = nameComparator;
+            if (desc) comparator = comparator.reversed();
+        }
+
+        responses.sort(comparator);
+        return responses;
+    }
 }
+
