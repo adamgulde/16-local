@@ -100,7 +100,6 @@ jobs:
           fi
 
       - name: Deploy via SSH to Staging VPS
-        if: ${{ secrets.SSH_HOST != '' || secrets.SSH_HOST_STAGING != '' }}
         uses: appleboy/ssh-action@v1.2.0
         env:
           SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
@@ -176,7 +175,6 @@ jobs:
           fi
 
       - name: Deploy via SSH to Production VPS
-        if: ${{ secrets.SSH_HOST != '' || secrets.SSH_HOST_PROD != '' }}
         uses: appleboy/ssh-action@v1.2.0
         env:
           SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
