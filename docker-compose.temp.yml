@@ -1,0 +1,21 @@
+services:
+  coming_soon:
+    image: nginx:alpine
+    container_name: app_coming_soon
+    restart: unless-stopped
+    volumes:
+      - ./temp-coming-soon:/usr/share/nginx/html:ro
+
+  proxy:
+    image: nginx:alpine
+    container_name: app_proxy
+    restart: unless-stopped
+    ports:
+      - "${EXTERNAL_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - ./nginx.temp.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      coming_soon:
+        condition: service_started
