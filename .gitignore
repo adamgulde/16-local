@@ -26,3 +26,5 @@ out/
 # Docker
 postgres_data/
 .env
+
+.md
