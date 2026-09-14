@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS connection_requests (
     id UUID PRIMARY KEY,
     sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
     receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(50)
+    status VARCHAR(255)
 );
 
 CREATE INDEX IF NOT EXISTS idx_connection_requests_sender ON connection_requests(sender_id);

@@ -10,15 +10,6 @@ on:
       - staging
       - main
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Target Environment to Deploy'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -77,85 +68,10 @@ jobs:
           cd frontend
           npm run build
 
-  deploy-staging:
-    name: Deploy to Staging
-    needs: [ci-backend, ci-frontend]
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Deploy to Staging Host
-        env:
-          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
-        run: |
-          echo "Deploying to staging with staging database..."
-          if [ -z "$SPRING_DATASOURCE_URL" ]; then
-            echo "WARNING: SPRING_DATASOURCE_URL secret is not set for staging environment."
-          else
-            echo "Staging database secret detected."
-          fi
-
-      - name: Deploy via SSH to Staging VPS
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
-          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME || 'postgres' }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
-          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
-          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
-          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
-          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS || 'http://localhost,http://localhost:80' }}
-          CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
-          CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
-        with:
-          host: ${{ secrets.SSH_HOST_STAGING || secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER_STAGING || secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY_STAGING || secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT_STAGING || secrets.SSH_PORT || 22 }}
-          envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY
-          script: |
-            set -e
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_STAGING || secrets.DEPLOY_PATH || '/opt/app-staging' }}"
-            echo "Deploying Staging to $DEPLOY_DIR..."
-            cd "$DEPLOY_DIR"
-            git fetch origin staging
-            git checkout staging
-            git pull origin staging
-
-            # Provision Cloudflare SSL certificates if provided
-            mkdir -p certs
-            if [ -n "$CLOUDFLARE_ORIGIN_CERT" ]; then
-              echo "$CLOUDFLARE_ORIGIN_CERT" > certs/origin.crt
-              chmod 644 certs/origin.crt
-            fi
-            if [ -n "$CLOUDFLARE_ORIGIN_KEY" ]; then
-              echo "$CLOUDFLARE_ORIGIN_KEY" > certs/origin.key
-              chmod 600 certs/origin.key
-            fi
-
-            # Update .env with Supabase database and Twilio secrets
-            cat << EOF > .env
-            SPRING_DATASOURCE_URL=$SPRING_DATASOURCE_URL
-            SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME
-            SPRING_DATASOURCE_PASSWORD=$SPRING_DATASOURCE_PASSWORD
-            TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID
-            TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN
-            TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER
-            CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
-            EOF
-
-            docker compose -f docker-compose.yml -f docker-compose.staging.yml pull || true
-            docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build --remove-orphans
-            docker system prune -f
-
   deploy-production:
     name: Deploy to Production
     needs: [ci-backend, ci-frontend]
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -194,9 +110,17 @@ jobs:
           envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY
           script: |
             set -e
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app-prod' }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app' }}"
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              if [ -d "/opt/app/.git" ]; then
+                DEPLOY_DIR="/opt/app"
+              elif [ -d "$HOME/app/.git" ]; then
+                DEPLOY_DIR="$HOME/app"
+              fi
+            fi
             echo "Deploying Production to $DEPLOY_DIR..."
             cd "$DEPLOY_DIR"
+            git config --global --add safe.directory "$DEPLOY_DIR" || true
             git fetch origin main
             git checkout main
             git pull origin main

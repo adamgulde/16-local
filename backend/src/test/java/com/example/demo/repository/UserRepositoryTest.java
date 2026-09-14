@@ -1,5 +1,6 @@
 package com.example.demo.repository;
 
+import com.example.demo.model.Neighborhood;
 import com.example.demo.model.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,12 +25,20 @@ public class UserRepositoryTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private NeighborhoodRepository neighborhoodRepository;
+
     @Test
     void shouldFindByPhoneNumber() {
+        Neighborhood neighborhood = neighborhoodRepository.save(
+                Neighborhood.builder().memberCount(1L).createdAt(java.time.Instant.now()).build());
+
         User user = User.builder()
                 .firstName("John")
                 .lastName("Doe")
                 .phoneNumber("1234567890")
+                .inviteCode("JOHNDOE1")
+                .neighborhood(neighborhood)
                 .build();
         userRepository.save(user);
 

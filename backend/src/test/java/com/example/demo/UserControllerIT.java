@@ -104,7 +104,18 @@ public class UserControllerIT {
 
         ResponseEntity<Map[]> requests = restTemplate.exchange(
                 baseUrl("/api/requests/me"), HttpMethod.GET, authHeader(b.token()), Map[].class);
-        String requestId = (String) requests.getBody()[0].get("id");
+        assertThat(requests.getBody()).isNotNull();
+        String requestId = java.util.Arrays.stream(requests.getBody())
+                .filter(req -> {
+                    Object senderObj = req.get("sender");
+                    if (senderObj instanceof Map<?, ?> senderMap) {
+                        return a.user().id().toString().equals(senderMap.get("id"));
+                    }
+                    return false;
+                })
+                .map(req -> (String) req.get("id"))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Connection request from user A not found"));
 
         restTemplate.exchange(baseUrl("/api/requests/" + requestId + "/accept"), HttpMethod.PUT, authHeader(b.token()), String.class);
 
