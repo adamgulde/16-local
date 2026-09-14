@@ -1,8 +1,8 @@
 services:
   backend:
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
-      - DB_POOL_MAX_SIZE=10
+      SPRING_PROFILES_ACTIVE: prod
+      DB_POOL_MAX_SIZE: 10
     deploy:
       resources:
         limits:

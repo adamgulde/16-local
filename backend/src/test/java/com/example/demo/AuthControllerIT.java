@@ -20,9 +20,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.context.annotation.Import;
 
 import java.util.List;
 import java.util.Map;
@@ -31,12 +29,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
+@Import(TestcontainersConfiguration.class)
 public class AuthControllerIT {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @LocalServerPort
     private int port;
@@ -60,6 +54,12 @@ public class AuthControllerIT {
         return "http://localhost:" + port + path;
     }
 
+    private static final java.util.concurrent.atomic.AtomicInteger phoneSeq = new java.util.concurrent.atomic.AtomicInteger((int) (System.currentTimeMillis() % 100000));
+
+    private String nextPhone(String prefix) {
+        return prefix + String.format("%04d", phoneSeq.incrementAndGet() % 10000);
+    }
+
     private String cleanPhone(String phone) {
         if (phone == null) return null;
         String digits = phone.replaceAll("\\D", "");
@@ -74,7 +74,7 @@ public class AuthControllerIT {
 
     @Test
     void shouldRegisterAndReturnTokenAndUser() {
-        String phone = "5551112233";
+        String phone = nextPhone("555111");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phone, null), Void.class);
 
@@ -94,7 +94,7 @@ public class AuthControllerIT {
 
     @Test
     void shouldSignInWithOtp() {
-        String phone = "5552223344";
+        String phone = nextPhone("555222");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phone, null), Void.class);
         String code = getOtp(phone);
@@ -120,7 +120,7 @@ public class AuthControllerIT {
     @Test
     void shouldAutoConnectWhenRegisteringWithInviteCode() {
         // User A registers
-        String phoneA = "5553334455";
+        String phoneA = nextPhone("555333");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phoneA, null), Void.class);
         String codeA = getOtp(phoneA);
@@ -133,7 +133,7 @@ public class AuthControllerIT {
         assertThat(inviteCodeA).isNotBlank();
 
         // User B registers with User A's invite code
-        String phoneB = "5554445566";
+        String phoneB = nextPhone("555444");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phoneB, inviteCodeA), Void.class);
         String codeB = getOtp(phoneB);
@@ -149,7 +149,7 @@ public class AuthControllerIT {
 
     @Test
     void shouldReceive3ConnectionRequestsFromDefaultUsersWhenNewUserRegisters() {
-        String phone = "5559990011";
+        String phone = nextPhone("555991");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phone, null), Void.class);
         String code = getOtp(phone);
@@ -176,7 +176,7 @@ public class AuthControllerIT {
     @Test
     void shouldAutoAcceptWhenRequestSentToDefaultUser() {
         // Register new user
-        String phone = "5559990022";
+        String phone = nextPhone("555992");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
                 new InitiateOtpRequest(phone, null), Void.class);
         String code = getOtp(phone);
@@ -213,13 +213,13 @@ public class AuthControllerIT {
     @Test
     void shouldNotAutoAcceptWhenRequestSentToAnotherRegisteredUser() {
         // User 1
-        String phone1 = "5559990033";
+        String phone1 = nextPhone("555993");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(phone1, null), Void.class);
         ResponseEntity<AuthResponse> user1 = restTemplate.postForEntity(baseUrl("/api/auth/register"),
                 new RegisterRequest(phone1, getOtp(phone1), "User", "One", null), AuthResponse.class);
 
         // User 2
-        String phone2 = "5559990044";
+        String phone2 = nextPhone("555994");
         restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(phone2, null), Void.class);
         ResponseEntity<AuthResponse> user2 = restTemplate.postForEntity(baseUrl("/api/auth/register"),
                 new RegisterRequest(phone2, getOtp(phone2), "User", "Two", null), AuthResponse.class);

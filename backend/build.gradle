@@ -36,6 +36,46 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+def loadEnv() {
+    def envMap = [:]
+    def envFiles = [
+        rootProject.file('.env'),
+        project.file('.env')
+    ]
+    for (File f : envFiles) {
+        if (f.exists()) {
+            f.eachLine { line ->
+                line = line.trim()
+                if (line && !line.startsWith('#') && line.contains('=')) {
+                    int idx = line.indexOf('=')
+                    String key = line.substring(0, idx).trim()
+                    String val = line.substring(idx + 1).trim()
+                    if (val.startsWith('"') && val.endsWith('"') && val.length() >= 2) {
+                        val = val.substring(1, val.length() - 1)
+                    } else if (val.startsWith("'") && val.endsWith("'") && val.length() >= 2) {
+                        val = val.substring(1, val.length() - 1)
+                    }
+                    if (key) {
+                        envMap[key] = val
+                    }
+                }
+            }
+        }
+    }
+    return envMap
+}
+
+def envMap = loadEnv()
+
 tasks.named('test') {
     useJUnitPlatform()
+    if (!envMap.isEmpty()) {
+        environment envMap
+    }
+}
+
+tasks.named('bootRun') {
+    if (!envMap.isEmpty()) {
+        environment envMap
+    }
 }

@@ -9,6 +9,10 @@ RUN gradle bootJar -x test --no-daemon
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
+# Install curl and wget for container health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl wget \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create non-root user
 RUN addgroup --system spring && adduser --system spring --ingroup spring
 USER spring:spring
