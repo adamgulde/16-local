@@ -148,69 +148,6 @@ public class AuthControllerIT {
     }
 
     @Test
-    void shouldReceive3ConnectionRequestsFromDefaultUsersWhenNewUserRegisters() {
-        String phone = nextPhone("555991");
-        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
-                new InitiateOtpRequest(phone, null), Void.class);
-        String code = getOtp(phone);
-        ResponseEntity<AuthResponse> response = restTemplate.postForEntity(
-                baseUrl("/api/auth/register"),
-                new RegisterRequest(phone, code, "Carol", "NewUser", null), AuthResponse.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        User registeredUser = userRepository.findById(response.getBody().user().id()).orElseThrow();
-        assertThat(registeredUser.isDefaultUser()).isFalse();
-
-        // Check incoming requests
-        List<ConnectionRequest> incoming = connectionRequestRepository.findBySenderOrReceiver(registeredUser, registeredUser).stream()
-                .filter(r -> r.getReceiver().getId().equals(registeredUser.getId()))
-                .toList();
-
-        assertThat(incoming).hasSize(3);
-        for (ConnectionRequest req : incoming) {
-            assertThat(req.getStatus()).isEqualTo(ConnectionRequest.RequestStatus.PENDING);
-            assertThat(req.getSender().isDefaultUser()).isTrue();
-        }
-    }
-
-    @Test
-    void shouldAutoAcceptWhenRequestSentToDefaultUser() {
-        // Register new user
-        String phone = nextPhone("555992");
-        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
-                new InitiateOtpRequest(phone, null), Void.class);
-        String code = getOtp(phone);
-        ResponseEntity<AuthResponse> response = restTemplate.postForEntity(
-                baseUrl("/api/auth/register"),
-                new RegisterRequest(phone, code, "Dave", "Sender", null), AuthResponse.class);
-
-        String token = response.getBody().token();
-        UUID userId = response.getBody().user().id();
-
-        // Pick a default user that isn't connected to Dave and has no pending request
-        List<UUID> incomingSenderIds = connectionRequestRepository.findAll().stream()
-                .filter(r -> r.getReceiver().getId().equals(userId))
-                .map(r -> r.getSender().getId())
-                .toList();
-
-        User defaultTarget = userRepository.findAll().stream()
-                .filter(u -> u.isDefaultUser() && !incomingSenderIds.contains(u.getId()))
-                .findFirst()
-                .orElseThrow();
-
-        // Send connection request from Dave to defaultTarget
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(Map.of("receiverId", defaultTarget.getId().toString()), headers);
-
-        ResponseEntity<Void> sendResp = restTemplate.postForEntity(baseUrl("/api/requests"), requestEntity, Void.class);
-        assertThat(sendResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-
-        // Verify connected immediately!
-        assertThat(connectionService.areConnected(userId, defaultTarget.getId())).isTrue();
-    }
-
-    @Test
     void shouldNotAutoAcceptWhenRequestSentToAnotherRegisteredUser() {
         // User 1
         String phone1 = nextPhone("555993");
@@ -242,51 +179,6 @@ public class AuthControllerIT {
                         && r.getReceiver().getId().equals(user2.getBody().user().id())
                         && r.getStatus() == ConnectionRequest.RequestStatus.PENDING);
         assertThat(pending).isTrue();
-    }
-
-    @Test
-    void shouldAllowDefaultUsersToSignInWith000000() {
-        // 1. User 0 via full phone format
-        ResponseEntity<Void> initResp0 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/initiate-otp"),
-                new InitiateOtpRequest("+1 555-000-0000", null), Void.class);
-        assertThat(initResp0.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<AuthResponse> verifyResp0 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/verify-otp"),
-                new VerifyOtpRequest("+1 555-000-0000", "000000"), AuthResponse.class);
-        assertThat(verifyResp0.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(verifyResp0.getBody()).isNotNull();
-        assertThat(verifyResp0.getBody().token()).isNotBlank();
-        assertThat(verifyResp0.getBody().user().defaultUser()).isTrue();
-
-        // 2. User 1 via shortcut "1"
-        ResponseEntity<Void> initResp1 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/initiate-otp"),
-                new InitiateOtpRequest("1", null), Void.class);
-        assertThat(initResp1.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<AuthResponse> verifyResp1 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/verify-otp"),
-                new VerifyOtpRequest("1", "000000"), AuthResponse.class);
-        assertThat(verifyResp1.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(verifyResp1.getBody()).isNotNull();
-        assertThat(verifyResp1.getBody().token()).isNotBlank();
-        assertThat(verifyResp1.getBody().user().defaultUser()).isTrue();
-
-        // 3. User 100 via shortcut "user 100"
-        ResponseEntity<Void> initResp100 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/initiate-otp"),
-                new InitiateOtpRequest("user 100", null), Void.class);
-        assertThat(initResp100.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<AuthResponse> verifyResp100 = restTemplate.postForEntity(
-                baseUrl("/api/auth/signin/verify-otp"),
-                new VerifyOtpRequest("user 100", "000000"), AuthResponse.class);
-        assertThat(verifyResp100.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(verifyResp100.getBody()).isNotNull();
-        assertThat(verifyResp100.getBody().token()).isNotBlank();
-        assertThat(verifyResp100.getBody().user().defaultUser()).isTrue();
     }
 
     @Test

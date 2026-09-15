@@ -2,7 +2,6 @@ services:
   backend:
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      APP_DB_INIT_ENABLED: 'false'
       DB_POOL_MAX_SIZE: 10
     deploy:
       resources:

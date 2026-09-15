@@ -2,9 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.dto.*;
 import com.example.demo.exception.BadRequestException;
-import com.example.demo.model.ConnectionRequest;
 import com.example.demo.model.User;
-import com.example.demo.repository.ConnectionRequestRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.AuthTokenService;
 import com.example.demo.service.ConnectionService;
@@ -19,7 +17,6 @@ import org.springframework.web.bind.annotation.*;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -31,7 +28,6 @@ public class AuthController {
     private final SecureRandom secureRandom = new SecureRandom();
 
     private final UserRepository userRepository;
-    private final ConnectionRequestRepository connectionRequestRepository;
     private final AuthTokenService authTokenService;
     private final ConnectionService connectionService;
     private final PlacementService placementService;
@@ -64,13 +60,6 @@ public class AuthController {
 
         User user = userRepository.findByPhoneNumber(phone)
                 .orElseThrow(() -> new BadRequestException("User not found"));
-
-        if (!user.isDefaultUser()) {
-            List<ConnectionRequest> requests = connectionRequestRepository.findBySenderOrReceiver(user, user);
-            if (requests.isEmpty()) {
-                sendDefaultConnectionRequests(user);
-            }
-        }
 
         log.info("User {} logged in via OTP", user.getId());
         String token = authTokenService.issueToken(user);
@@ -165,9 +154,6 @@ public class AuthController {
         // Clean up verified OTP record after successful registration
         otpService.clearOtp(phone);
 
-        // For testing purposes: 3 existing default users send connection requests to the new user
-        sendDefaultConnectionRequests(user);
-
         log.info("Registered new user {} with invite code {}", user.getId(), uniqueInviteCode);
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
@@ -211,55 +197,9 @@ public class AuthController {
         User user = userRepository.findByPhoneNumber(phone)
                 .orElseThrow(() -> new BadRequestException("User not found"));
 
-        if (!user.isDefaultUser()) {
-            List<ConnectionRequest> requests = connectionRequestRepository.findBySenderOrReceiver(user, user);
-            if (requests.isEmpty()) {
-                sendDefaultConnectionRequests(user);
-            }
-        }
-
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
-    }
-
-    private void sendDefaultConnectionRequests(User newUser) {
-        if (newUser.isDefaultUser()) {
-            return;
-        }
-
-        List<UUID> connectedIds = connectionService.getNeighborIds(newUser.getId());
-        Set<UUID> excludedUserIds = new HashSet<>(connectedIds);
-        excludedUserIds.add(newUser.getId());
-
-        List<ConnectionRequest> existingRequests = connectionRequestRepository.findBySenderOrReceiver(newUser, newUser);
-        for (ConnectionRequest req : existingRequests) {
-            if (req.getSender() != null) excludedUserIds.add(req.getSender().getId());
-            if (req.getReceiver() != null) excludedUserIds.add(req.getReceiver().getId());
-        }
-
-        List<User> availableDefaults = userRepository.findAll().stream()
-                .filter(u -> u.isDefaultUser() && !excludedUserIds.contains(u.getId()))
-                .collect(Collectors.toList());
-
-        if (availableDefaults.isEmpty()) {
-            log.warn("No available default users found to send connection requests to new user {}", newUser.getId());
-            return;
-        }
-
-        Collections.shuffle(availableDefaults, secureRandom);
-        int count = Math.min(3, availableDefaults.size());
-        for (int i = 0; i < count; i++) {
-            User sender = availableDefaults.get(i);
-            ConnectionRequest request = ConnectionRequest.builder()
-                    .sender(sender)
-                    .receiver(newUser)
-                    .status(ConnectionRequest.RequestStatus.PENDING)
-                    .build();
-            connectionRequestRepository.save(request);
-            log.info("Default user {} ({}) sent connection request to new user {}",
-                    sender.getId(), sender.getFirstName() + " " + sender.getLastName(), newUser.getId());
-        }
     }
 
     private String generateUniqueInviteCode() {
@@ -284,25 +224,6 @@ public class AuthController {
         if (phone == null) return null;
         String trimmed = phone.trim();
         if (trimmed.isEmpty()) return null;
-
-        // Support shortcuts like "0", "1", "100", "user 1", "user1", "User 100", "#1"
-        String lower = trimmed.toLowerCase();
-        if (lower.startsWith("user")) {
-            lower = lower.substring(4).trim();
-        } else if (lower.startsWith("#")) {
-            lower = lower.substring(1).trim();
-        } else if (lower.startsWith("+1")) {
-            String rest = lower.substring(2).trim();
-            if (rest.matches("\\d{1,3}")) {
-                lower = rest;
-            }
-        }
-        if (lower.matches("\\d{1,3}")) {
-            int num = Integer.parseInt(lower);
-            if (num >= 0 && num <= 105) {
-                return String.format("+1 555-000-%04d", num);
-            }
-        }
 
         String digits = trimmed.replaceAll("\\D", "");
         if (digits.startsWith("1") && digits.length() == 11) {

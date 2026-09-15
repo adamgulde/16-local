@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignInOtp, verifySignInOtp, saveSession } from '../../services/authService';
 import { extractErrorMessage } from '../../services/apiClient';
-import { formatPhoneNumber, isCompletePhoneNumber, resolvePhoneNumberOrShortcut } from '../../utils/phoneUtils';
+import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
 interface LoginProps {
@@ -21,30 +21,25 @@ export const Login = ({ onLogin }: LoginProps) => {
   const submittingRef = useRef(false);
   const { cooldown, isCoolingDown, startCooldown } = useOtpCooldown(30);
 
-  const handleInitiate = async (customPhone?: string) => {
+  const handleInitiate = async () => {
     if (submittingRef.current) return;
-    const raw = customPhone !== undefined ? customPhone : phoneNumber;
-    const trimmed = raw.trim();
+    const trimmed = phoneNumber.trim();
     if (!trimmed) {
-      setError('Please enter your phone number or default user (0–100).');
+      setError('Please enter your phone number.');
       return;
     }
     if (!isCompletePhoneNumber(trimmed)) {
-      setError('Please enter a valid 10-digit phone number (+1 ___-___-____) or default user number (0–100).');
+      setError('Please enter a valid 10-digit phone number (+1 ___-___-____).');
       return;
     }
-    const resolved = resolvePhoneNumberOrShortcut(trimmed);
+    const resolved = formatPhoneNumber(trimmed);
     setError('');
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
       await initiateSignInOtp(resolved);
       setPhoneNumber(resolved);
-      if (resolved.startsWith('+1 555-000-')) {
-        setCode('000000');
-      } else {
-        setCode('');
-      }
+      setCode('');
       setStep('OTP');
       setResendSuccess(false);
       startCooldown(30);
@@ -65,7 +60,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       setError('Please enter the 6-digit verification code.');
       return;
     }
-    const resolvedPhone = resolvePhoneNumberOrShortcut(phoneNumber.trim());
+    const resolvedPhone = formatPhoneNumber(phoneNumber.trim());
     setError('');
     submittingRef.current = true;
     setIsSubmitting(true);
@@ -89,11 +84,8 @@ export const Login = ({ onLogin }: LoginProps) => {
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const resolvedPhone = resolvePhoneNumberOrShortcut(phoneNumber.trim());
+      const resolvedPhone = formatPhoneNumber(phoneNumber.trim());
       await initiateSignInOtp(resolvedPhone);
-      if (resolvedPhone.startsWith('+1 555-000-')) {
-        setCode('000000');
-      }
       setResendSuccess(true);
       startCooldown(30);
     } catch (err) {
@@ -105,8 +97,6 @@ export const Login = ({ onLogin }: LoginProps) => {
       }, 300);
     }
   };
-
-  const isDefaultUserNumber = phoneNumber.startsWith('+1 555-000-');
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '20px' }}>
@@ -130,52 +120,16 @@ export const Login = ({ onLogin }: LoginProps) => {
           <form onSubmit={(e) => { e.preventDefault(); handleInitiate(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', color: '#9a9a9a', marginBottom: '4px' }}>
-                Phone Number or User # (0–100)
+                Phone Number
               </label>
               <input
                 autoFocus
                 type="tel"
-                placeholder="+1 ___-___-____ (e.g. 0 to 100)"
+                placeholder="+1 ___-___-____"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(formatPhoneNumber(e.target.value))}
                 style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
               />
-            </div>
-
-            <div style={{ background: '#252528', padding: '10px 12px', borderRadius: '8px', border: '1px solid #3a3a40' }}>
-              <div style={{ fontSize: '11px', color: '#9a9a9a', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Quick Test: Default Users (0–100)</span>
-                <span style={{ color: '#4caf50', fontSize: '10px' }}>OTP: 000000</span>
-              </div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {[0, 1, 2, 5, 10, 50, 100].map((num) => {
-                  const numStr = num.toString().padStart(4, '0');
-                  const phoneVal = `+1 555-000-${numStr}`;
-                  return (
-                    <button
-                      key={num}
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() => {
-                        if (isSubmitting) return;
-                        setPhoneNumber(phoneVal);
-                        handleInitiate(phoneVal);
-                      }}
-                      style={{
-                        background: '#333338',
-                        border: '1px solid #4a4a52',
-                        color: isSubmitting ? '#7a7a82' : '#e0e0e0',
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        cursor: isSubmitting ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      User {num}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
             <button
@@ -200,11 +154,6 @@ export const Login = ({ onLogin }: LoginProps) => {
                 style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '18px', textAlign: 'center', letterSpacing: '4px' }}
               />
             </div>
-            {isDefaultUserNumber && (
-              <div style={{ fontSize: '11px', color: '#4caf50', textAlign: 'center', background: '#1c2e20', padding: '6px', borderRadius: '6px', border: '1px solid #2e5c36' }}>
-                Default user code <strong>000000</strong> prefilled! Click below to sign in.
-              </div>
-            )}
             <button
               type="submit"
               disabled={isSubmitting}

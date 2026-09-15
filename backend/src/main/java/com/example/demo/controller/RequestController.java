@@ -78,19 +78,6 @@ public class RequestController {
             }
         }
 
-        // Testing requirement: all default users automatically accept requests.
-        // Note that new users who register should NOT under any circumstance default-accept requests.
-        if (receiver.isDefaultUser()) {
-            ConnectionRequest connRequest = ConnectionRequest.builder()
-                    .sender(sender)
-                    .receiver(receiver)
-                    .status(ConnectionRequest.RequestStatus.ACCEPTED)
-                    .build();
-            requestRepository.save(connRequest);
-            connectionService.connect(sender, receiver);
-            return ResponseEntity.noContent().build();
-        }
-
         ConnectionRequest connRequest = ConnectionRequest.builder()
                 .sender(sender)
                 .receiver(receiver)

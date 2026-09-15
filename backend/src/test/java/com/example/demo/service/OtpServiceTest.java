@@ -35,21 +35,6 @@ class OtpServiceTest {
     }
 
     @Test
-    void sendOtp_forDefaultTestUser_savesZeroCodeAndSkipsSms() {
-        String testPhone = "+1 555-000-0042";
-        when(otpRepository.findByPhoneNumber(testPhone)).thenReturn(Optional.empty());
-
-        otpService.sendOtp(testPhone);
-
-        ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
-        verify(otpRepository).save(captor.capture());
-        assertThat(captor.getValue().getCode()).isEqualTo("000000");
-        assertThat(captor.getValue().getPhoneNumber()).isEqualTo(testPhone);
-        assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
-        verifyNoInteractions(smsService);
-    }
-
-    @Test
     void sendOtp_forRealUser_generatesCodeAndDispatchesToSmsService() {
         String phone = "+12025550199";
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
@@ -60,16 +45,15 @@ class OtpServiceTest {
         verify(otpRepository).save(captor.capture());
         String savedCode = captor.getValue().getCode();
         assertThat(savedCode).matches("^\\d{6}$");
-        assertThat(savedCode).isNotEqualTo("000000");
         assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
 
         verify(smsService).sendSms(eq(phone), contains("Your verification code is: " + savedCode));
     }
 
     @Test
-    void verifyOtp_withZeroCode_alwaysReturnsTrue() {
-        assertThat(otpService.verifyOtp("+12025550199", "000000")).isTrue();
-        verifyNoInteractions(smsService);
+    void verifyOtp_whenCodeIsBlankOrNull_returnsFalse() {
+        assertThat(otpService.verifyOtp("+12025550199", "")).isFalse();
+        assertThat(otpService.verifyOtp("+12025550199", null)).isFalse();
         verifyNoInteractions(otpRepository);
     }
 
@@ -122,20 +106,6 @@ class OtpServiceTest {
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
 
         assertThat(otpService.verifyOtp(phone, "123456")).isFalse();
-    }
-
-    @Test
-    void verifySignUpOtp_withZeroCode_marksOtpAsVerified() {
-        String phone = "+1 555-000-0042";
-        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
-
-        boolean result = otpService.verifySignUpOtp(phone, "000000");
-        assertThat(result).isTrue();
-
-        ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
-        verify(otpRepository).save(captor.capture());
-        assertThat(captor.getValue().getCode()).isEqualTo("VERIFIED");
-        assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
     }
 
     @Test
@@ -193,12 +163,6 @@ class OtpServiceTest {
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.of(otp));
 
         assertThat(otpService.verifyRegistration(phone, code)).isTrue();
-    }
-
-    @Test
-    void verifyRegistration_withZeroCode_returnsTrue() {
-        assertThat(otpService.verifyRegistration("+12025550199", "000000")).isTrue();
-        verifyNoInteractions(otpRepository);
     }
 
     @Test
