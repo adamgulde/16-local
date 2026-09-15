@@ -7,9 +7,14 @@ import com.example.demo.model.User;
 import com.example.demo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -28,9 +33,21 @@ public class UserService {
     }
 
     /** List view: phone numbers are only included for the requester's own connections (or themselves). */
+    @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers(UUID requestingUserId) {
-        return userRepository.findAll().stream()
-                .map(user -> toResponse(user, requestingUserId))
+        List<User> users = userRepository.findAll();
+        Map<UUID, List<UUID>> adjacency = connectionService.buildAdjacency();
+        Set<UUID> myConnections = requestingUserId != null
+                ? new HashSet<>(adjacency.getOrDefault(requestingUserId, List.of()))
+                : Collections.emptySet();
+
+        return users.stream()
+                .map(user -> {
+                    boolean isSelf = requestingUserId != null && user.getId().equals(requestingUserId);
+                    boolean isConnection = requestingUserId != null && myConnections.contains(user.getId());
+                    List<UUID> relationships = adjacency.getOrDefault(user.getId(), List.of());
+                    return UserResponse.from(user, relationships, isSelf || isConnection);
+                })
                 .toList();
     }
 
