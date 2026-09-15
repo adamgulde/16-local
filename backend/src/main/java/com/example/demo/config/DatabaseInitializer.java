@@ -12,10 +12,12 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.util.*;
 
 @Configuration
+@Profile("!prod")
 @ConditionalOnProperty(name = "app.db.init.enabled", havingValue = "true", matchIfMissing = true)
 public class DatabaseInitializer {
 
