@@ -2,7 +2,8 @@ package com.example.demo.service;
 
 import com.example.demo.model.Otp;
 import com.example.demo.repository.OtpRepository;
-import com.example.demo.service.sms.SmsService;
+import com.example.demo.service.textbelt.TextbeltOtpService;
+import com.example.demo.service.textbelt.TextbeltOtpService.TextbeltSendResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,7 +15,6 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -25,29 +25,31 @@ class OtpServiceTest {
     private OtpRepository otpRepository;
 
     @Mock
-    private SmsService smsService;
+    private TextbeltOtpService textbeltOtpService;
 
     private OtpService otpService;
 
     @BeforeEach
     void setUp() {
-        otpService = new OtpService(otpRepository, smsService);
+        otpService = new OtpService(otpRepository, textbeltOtpService);
     }
 
     @Test
-    void sendOtp_forRealUser_generatesCodeAndDispatchesToSmsService() {
+    void sendOtp_forRealUser_generatesCodeAndDispatchesToTextbeltService() {
         String phone = "+12025550199";
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
+        when(textbeltOtpService.sendOtp(phone, phone))
+                .thenReturn(new TextbeltSendResult(true, "txt-123", 50, null, "654321"));
 
         otpService.sendOtp(phone);
 
         ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
         verify(otpRepository).save(captor.capture());
         String savedCode = captor.getValue().getCode();
-        assertThat(savedCode).matches("^\\d{6}$");
+        assertThat(savedCode).isEqualTo("654321");
         assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
 
-        verify(smsService).sendSms(eq(phone), contains("Your verification code is: " + savedCode));
+        verify(textbeltOtpService).sendOtp(eq(phone), eq(phone));
     }
 
     @Test

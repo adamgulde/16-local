@@ -2,24 +2,31 @@ package com.example.demo.service;
 
 import com.example.demo.model.Otp;
 import com.example.demo.repository.OtpRepository;
-import com.example.demo.service.sms.SmsService;
+import com.example.demo.service.textbelt.TextbeltOtpService;
+import com.example.demo.service.textbelt.TextbeltOtpService.TextbeltSendResult;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Random;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OtpService {
 
     private final OtpRepository otpRepository;
-    private final SmsService smsService;
+    private final TextbeltOtpService textbeltOtpService;
     private final Random random = new Random();
 
     public void sendOtp(String phoneNumber) {
-        String code = String.format("%06d", random.nextInt(1000000));
+        TextbeltSendResult result = textbeltOtpService.sendOtp(phoneNumber, phoneNumber);
+
+        String code = (result != null && result.otp() != null)
+                ? result.otp()
+                : String.format("%06d", random.nextInt(1000000));
 
         Otp otp = otpRepository.findByPhoneNumber(phoneNumber)
                 .orElse(Otp.builder().phoneNumber(phoneNumber).build());
@@ -27,17 +34,24 @@ public class OtpService {
         otp.setCode(code);
         otp.setExpiresAt(LocalDateTime.now().plusMinutes(15));
         otpRepository.save(otp);
-
-        smsService.sendSms(phoneNumber, "Your verification code is: " + code);
     }
 
     public boolean verifyOtp(String phoneNumber, String code) {
-        if (code == null || code.isBlank()) {
+        if (code == null || code.isBlank() || phoneNumber == null || phoneNumber.isBlank()) {
             return false;
         }
 
+        String cleanCode = code.trim();
+
+        // 1. Verify against Textbelt OTP API
+        boolean verified = textbeltOtpService.verifyOtp(phoneNumber, cleanCode);
+        if (verified) {
+            return true;
+        }
+
+        // 2. Check local database record (supports test mock / direct match)
         return otpRepository.findByPhoneNumber(phoneNumber)
-                .map(otp -> otp.getCode().equals(code.trim())
+                .map(otp -> otp.getCode().equals(cleanCode)
                         && otp.getExpiresAt().isAfter(LocalDateTime.now()))
                 .orElse(false);
     }

@@ -44,7 +44,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable()) // stateless token API, no browser cookie session to protect
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/api/otp/**", "/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

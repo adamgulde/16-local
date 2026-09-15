@@ -10,9 +10,11 @@ import com.example.demo.repository.ConnectionRequestRepository;
 import com.example.demo.repository.OtpRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.ConnectionService;
+import com.example.demo.service.textbelt.TextbeltOtpService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -49,6 +51,9 @@ public class AuthControllerIT {
 
     @Autowired
     private ConnectionService connectionService;
+
+    @MockitoBean
+    private TextbeltOtpService textbeltOtpService;
 
     private String baseUrl(String path) {
         return "http://localhost:" + port + path;

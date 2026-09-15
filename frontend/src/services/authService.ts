@@ -53,6 +53,28 @@ export const validateInviteCode = async (code: string): Promise<InviteCodeValida
 export const initiateOtp = initiateSignInOtp;
 export const verifyOtp = verifySignInOtp;
 
+// Standalone Textbelt OTP API
+export interface OtpActionResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface OtpVerifyResponse {
+  success: boolean;
+  verified: boolean;
+  message: string;
+}
+
+export const sendMobileOtp = async (phone: string, userId?: string): Promise<OtpActionResponse> => {
+  const response = await apiClient.post<OtpActionResponse>('/api/otp/send', { phone, userId });
+  return response.data;
+};
+
+export const verifyMobileOtp = async (userId: string, otp: string): Promise<OtpVerifyResponse> => {
+  const response = await apiClient.post<OtpVerifyResponse>('/api/otp/verify', { userId, otp });
+  return response.data;
+};
+
 export const saveSession = (auth: AuthResponse): void => {
   localStorage.setItem(TOKEN_KEY, auth.token);
   localStorage.setItem(USER_KEY, JSON.stringify(auth.user));
