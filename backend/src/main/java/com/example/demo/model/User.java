@@ -6,7 +6,7 @@ import lombok.*;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users", indexes = @Index(name = "idx_users_map_index", columnList = "mapIndex"))
+@Table(name = "users", indexes = @Index(name = "idx_users_map_index", columnList = "map_index"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -53,11 +53,16 @@ public class User {
     private Neighborhood neighborhood;
 
     /** This user's join order within their neighborhood — the low-order bits of mapIndex. */
+    @Column(name = "local_index")
     private Long localIndex;
 
     /** The single combined Hilbert index this user is placed at; see HilbertCurve. */
+    @Column(name = "map_index")
     private Long mapIndex;
 
+    @Column(name = "map_x")
     private Long mapX;
+
+    @Column(name = "map_y")
     private Long mapY;
 }

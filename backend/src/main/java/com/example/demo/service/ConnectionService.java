@@ -55,7 +55,7 @@ public class ConnectionService {
     }
 
     /** Builds the full adjacency map from the edge table (far lighter than loading every User row). */
-    private Map<UUID, List<UUID>> buildAdjacency() {
+    public Map<UUID, List<UUID>> buildAdjacency() {
         Map<UUID, List<UUID>> adjacency = new HashMap<>();
         for (Connection c : connectionRepository.findAll()) {
             UUID a = c.getUserA().getId();
