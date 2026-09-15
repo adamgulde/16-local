@@ -924,11 +924,19 @@ export const MobileGraphView = ({
                   {fullName(req.sender)}
                 </button>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                  <button style={{ ...fabActionStyle, background: '#2a5f9e', borderColor: '#3d8bff', color: '#fff', flex: 1 }} onClick={() => c.handleAcceptRequest(req.id)}>
-                    Accept
+                  <button
+                    disabled={c.isActionPending(req.id)}
+                    style={{ ...fabActionStyle, background: '#2a5f9e', borderColor: '#3d8bff', color: '#fff', flex: 1, cursor: c.isActionPending(req.id) ? 'not-allowed' : 'pointer' }}
+                    onClick={() => c.handleAcceptRequest(req.id)}
+                  >
+                    {c.isActionPending(req.id) ? 'Accepting...' : 'Accept'}
                   </button>
-                  <button style={{ ...fabActionStyle, borderColor: '#d32f2f', color: '#ff6b6b', flex: 1 }} onClick={() => c.handleDeclineRequest(req.id)}>
-                    Decline
+                  <button
+                    disabled={c.isActionPending(req.id)}
+                    style={{ ...fabActionStyle, borderColor: '#d32f2f', color: '#ff6b6b', flex: 1, cursor: c.isActionPending(req.id) ? 'not-allowed' : 'pointer' }}
+                    onClick={() => c.handleDeclineRequest(req.id)}
+                  >
+                    {c.isActionPending(req.id) ? 'Declining...' : 'Decline'}
                   </button>
                 </div>
               </div>
@@ -1014,6 +1022,7 @@ export const MobileGraphView = ({
                       </span>
                     ) : incomingReqId ? (
                       <button
+                        disabled={c.isActionPending(incomingReqId)}
                         style={{
                           ...fabActionStyle,
                           minHeight: 36,
@@ -1021,15 +1030,17 @@ export const MobileGraphView = ({
                           background: '#2a5f9e',
                           borderColor: '#3d8bff',
                           color: '#fff',
+                          cursor: c.isActionPending(incomingReqId) ? 'not-allowed' : 'pointer',
                         }}
                         onClick={() => c.handleAcceptRequest(incomingReqId)}
                       >
-                        Accept
+                        {c.isActionPending(incomingReqId) ? 'Accepting...' : 'Accept'}
                       </button>
                     ) : isSent ? (
                       <span style={{ fontSize: '12px', color: '#9a9a9a' }}>Pending</span>
                     ) : (
                       <button
+                        disabled={c.isActionPending(u.id)}
                         style={{
                           ...fabActionStyle,
                           minHeight: 36,
@@ -1037,10 +1048,11 @@ export const MobileGraphView = ({
                           background: '#2a5f9e',
                           borderColor: '#3d8bff',
                           color: '#fff',
+                          cursor: c.isActionPending(u.id) ? 'not-allowed' : 'pointer',
                         }}
                         onClick={() => c.handleSendRequest(u.id)}
                       >
-                        + Connect
+                        {c.isActionPending(u.id) ? 'Connecting...' : '+ Connect'}
                       </button>
                     )}
                   </div>
@@ -1216,10 +1228,12 @@ export const MobileGraphView = ({
               onSendRequest={() => c.handleSendRequest(c.selectedUser!.id)}
               showSendRequest={c.selectedUser.id !== currentUser.id && !c.connectedUserIds.has(c.selectedUser.id)}
               isRequestPending={c.sentRequestUserIds.has(c.selectedUser.id)}
+              isSendingRequest={c.isActionPending(c.selectedUser.id)}
               onFindPath={() => findPathAndShowSheet(c.selectedUser!.id)}
               showFindPath={c.selectedUser.id !== currentUser.id}
               onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}
               showDisconnect={c.selectedUser.id !== currentUser.id && c.connectedUserIds.has(c.selectedUser.id)}
+              isDisconnecting={c.isActionPending(c.selectedUser.id)}
               onSelectNode={(nodeId: string) => selectAndShowCard(nodeId)}
               isCurrentUser={c.selectedUser.id === currentUser.id}
             />

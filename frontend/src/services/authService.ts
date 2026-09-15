@@ -35,6 +35,10 @@ export const initiateSignUpOtp = async (phoneNumber: string, inviteCode?: string
   await apiClient.post('/api/auth/signup/initiate-otp', { phoneNumber, inviteCode: inviteCode || null });
 };
 
+export const verifySignUpOtp = async (phoneNumber: string, code: string): Promise<void> => {
+  await apiClient.post('/api/auth/signup/verify-otp', { phoneNumber, code });
+};
+
 export const register = async (payload: SignUpPayload): Promise<AuthResponse> => {
   const response = await apiClient.post<AuthResponse>('/api/auth/register', payload);
   return response.data;

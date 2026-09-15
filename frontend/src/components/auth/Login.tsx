@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignInOtp, verifySignInOtp, saveSession } from '../../services/authService';
 import { extractErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber, resolvePhoneNumberOrShortcut } from '../../utils/phoneUtils';
+import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -17,7 +18,11 @@ export const Login = ({ onLogin }: LoginProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
 
+  const submittingRef = useRef(false);
+  const { cooldown, isCoolingDown, startCooldown } = useOtpCooldown(30);
+
   const handleInitiate = async (customPhone?: string) => {
+    if (submittingRef.current) return;
     const raw = customPhone !== undefined ? customPhone : phoneNumber;
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -30,6 +35,7 @@ export const Login = ({ onLogin }: LoginProps) => {
     }
     const resolved = resolvePhoneNumberOrShortcut(trimmed);
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       await initiateSignInOtp(resolved);
@@ -41,14 +47,19 @@ export const Login = ({ onLogin }: LoginProps) => {
       }
       setStep('OTP');
       setResendSuccess(false);
+      startCooldown(30);
     } catch (err) {
       setError(extractErrorMessage(err) || 'Failed to send verification code.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
   const handleVerify = async () => {
+    if (submittingRef.current) return;
     const trimmedCode = code.trim();
     if (!trimmedCode) {
       setError('Please enter the 6-digit verification code.');
@@ -56,6 +67,7 @@ export const Login = ({ onLogin }: LoginProps) => {
     }
     const resolvedPhone = resolvePhoneNumberOrShortcut(phoneNumber.trim());
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const auth = await verifySignInOtp(resolvedPhone, trimmedCode);
@@ -64,12 +76,17 @@ export const Login = ({ onLogin }: LoginProps) => {
     } catch (err) {
       setError(extractErrorMessage(err) || 'Invalid or expired code.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
   const handleResend = async () => {
+    if (submittingRef.current || isCoolingDown) return;
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const resolvedPhone = resolvePhoneNumberOrShortcut(phoneNumber.trim());
@@ -78,10 +95,14 @@ export const Login = ({ onLogin }: LoginProps) => {
         setCode('000000');
       }
       setResendSuccess(true);
+      startCooldown(30);
     } catch (err) {
       setError(extractErrorMessage(err) || 'Failed to resend code.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
@@ -134,18 +155,20 @@ export const Login = ({ onLogin }: LoginProps) => {
                     <button
                       key={num}
                       type="button"
+                      disabled={isSubmitting}
                       onClick={() => {
+                        if (isSubmitting) return;
                         setPhoneNumber(phoneVal);
                         handleInitiate(phoneVal);
                       }}
                       style={{
                         background: '#333338',
                         border: '1px solid #4a4a52',
-                        color: '#e0e0e0',
+                        color: isSubmitting ? '#7a7a82' : '#e0e0e0',
                         borderRadius: '4px',
                         padding: '4px 8px',
                         fontSize: '11px',
-                        cursor: 'pointer'
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer'
                       }}
                     >
                       User {num}
@@ -158,7 +181,7 @@ export const Login = ({ onLogin }: LoginProps) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
             >
               {isSubmitting ? 'Sending Code...' : 'Send Verification Code'}
             </button>
@@ -185,25 +208,26 @@ export const Login = ({ onLogin }: LoginProps) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
             >
               {isSubmitting ? 'Verifying...' : 'Verify & Sign In'}
             </button>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => { setStep('PHONE'); setError(''); }}
-                style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontSize: '13px', padding: 0 }}
               >
                 ← Change Phone
               </button>
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={isSubmitting}
-                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                disabled={isSubmitting || isCoolingDown}
+                style={{ background: 'none', border: 'none', color: isCoolingDown ? '#6a6a70' : '#9a9a9a', cursor: isSubmitting || isCoolingDown ? 'not-allowed' : 'pointer', fontSize: '13px', padding: 0 }}
               >
-                Resend Code
+                {isSubmitting ? 'Sending...' : isCoolingDown ? `Resend in ${cooldown}s` : 'Resend Code'}
               </button>
             </div>
             {resendSuccess && <p style={{ color: '#4caf50', fontSize: '12px', margin: 0, textAlign: 'center' }}>New code sent!</p>}

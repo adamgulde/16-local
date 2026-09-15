@@ -100,6 +100,23 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/signup/verify-otp")
+    public ResponseEntity<Void> verifySignUpOtp(@RequestBody VerifyOtpRequest request) {
+        String phone = cleanPhone(request.phoneNumber());
+        String code = clean(request.code());
+        if (isBlank(phone) || isBlank(code)) {
+            throw new BadRequestException("Phone number and verification code are required");
+        }
+        if (userRepository.existsByPhoneNumber(phone)) {
+            throw new BadRequestException("An account with this phone number already exists. Please sign in.");
+        }
+        if (!otpService.verifySignUpOtp(phone, code)) {
+            throw new BadRequestException("Invalid or expired verification code");
+        }
+        log.info("Sign-up OTP verified for phone {}", phone);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
         String phone = cleanPhone(request.phoneNumber());
@@ -115,7 +132,7 @@ public class AuthController {
             throw new BadRequestException("An account with this phone number already exists. Please sign in.");
         }
 
-        if (!otpService.verifyOtp(phone, code)) {
+        if (!otpService.verifyRegistration(phone, code)) {
             throw new BadRequestException("Invalid or expired verification code");
         }
 
@@ -144,6 +161,9 @@ public class AuthController {
             user = placementService.foundNeighborhood(user);
             userRepository.save(user);
         }
+
+        // Clean up verified OTP record after successful registration
+        otpService.clearOtp(phone);
 
         // For testing purposes: 3 existing default users send connection requests to the new user
         sendDefaultConnectionRequests(user);

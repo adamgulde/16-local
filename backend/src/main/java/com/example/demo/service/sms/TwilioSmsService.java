@@ -4,15 +4,20 @@ import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.type.PhoneNumber;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
-
+/**
+ * Twilio SMS messaging service using regular Twilio Programmable Messaging,
+ * with fallback to mock/console logging in dev/test environments.
+ */
 @Service
 public class TwilioSmsService implements SmsService {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TwilioSmsService.class);
+    private static final Logger log = LoggerFactory.getLogger(TwilioSmsService.class);
 
     @Value("${twilio.account-sid:}")
     private String accountSid;
@@ -23,21 +28,47 @@ public class TwilioSmsService implements SmsService {
     @Value("${twilio.phone-number:}")
     private String twilioPhoneNumber;
 
+    @Value("${twilio.messaging-service-sid:}")
+    private String messagingServiceSid;
+
     private boolean configured = false;
 
     @PostConstruct
     public void init() {
-        if (accountSid != null) accountSid = accountSid.trim().replace("\"", "").replace("'", "");
-        if (authToken != null) authToken = authToken.trim().replace("\"", "").replace("'", "");
-        if (twilioPhoneNumber != null) twilioPhoneNumber = twilioPhoneNumber.trim().replace("\"", "").replace("'", "");
+        if (accountSid != null) accountSid = sanitize(accountSid);
+        if (authToken != null) authToken = sanitize(authToken);
+        if (twilioPhoneNumber != null) twilioPhoneNumber = sanitize(twilioPhoneNumber);
+        if (messagingServiceSid != null) messagingServiceSid = sanitize(messagingServiceSid);
 
         if (accountSid != null && !accountSid.isBlank() && authToken != null && !authToken.isBlank()) {
-            Twilio.init(accountSid, authToken);
-            configured = true;
-            log.info("Twilio SMS service initialized successfully");
+            try {
+                Twilio.init(accountSid, authToken);
+                configured = true;
+                if (isSmsConfigured()) {
+                    log.info("Twilio SMS messaging initialized (Sender: {})",
+                            messagingServiceSid != null && !messagingServiceSid.isBlank() ? messagingServiceSid : twilioPhoneNumber);
+                } else {
+                    log.warn("Twilio credentials configured, but neither phone-number nor messaging-service-sid is set.");
+                }
+            } catch (Exception e) {
+                log.error("Failed to initialize Twilio SDK: {}", e.getMessage());
+            }
         } else {
-            log.warn("Twilio credentials not configured; SMS will be logged to console in dev mode");
+            log.warn("Twilio credentials not configured; SMS messages will be logged to console in dev/test mode");
         }
+    }
+
+    private String sanitize(String value) {
+        return value.trim().replace("\"", "").replace("'", "");
+    }
+
+    public boolean isConfigured() {
+        return configured;
+    }
+
+    public boolean isSmsConfigured() {
+        return configured && ((twilioPhoneNumber != null && !twilioPhoneNumber.isBlank())
+                || (messagingServiceSid != null && !messagingServiceSid.isBlank()));
     }
 
     private String toE164(String phone) {
@@ -51,22 +82,30 @@ public class TwilioSmsService implements SmsService {
 
     @Override
     public void sendSms(String phoneNumber, String message) {
-        if (configured && twilioPhoneNumber != null && !twilioPhoneNumber.isBlank()) {
+        if (isSmsConfigured()) {
             try {
                 String to = toE164(phoneNumber);
-                String from = toE164(twilioPhoneNumber);
-                Message.creator(
-                        new PhoneNumber(to),
-                        new PhoneNumber(from),
-                        message
-                ).create();
+                if (messagingServiceSid != null && !messagingServiceSid.isBlank()) {
+                    Message.creator(
+                            new PhoneNumber(to),
+                            messagingServiceSid,
+                            message
+                    ).create();
+                } else {
+                    String from = toE164(twilioPhoneNumber);
+                    Message.creator(
+                            new PhoneNumber(to),
+                            new PhoneNumber(from),
+                            message
+                    ).create();
+                }
                 log.info("Twilio SMS successfully sent to {}", to);
                 return;
-            } catch (com.twilio.exception.ApiException e) {
-                log.warn("Twilio API error sending SMS to {}: {} (code: {}). Falling back to console OTP.",
+            } catch (ApiException e) {
+                log.warn("Twilio API error sending SMS to {}: {} (code: {}). Falling back to console log.",
                         phoneNumber, e.getMessage(), e.getCode());
             } catch (Exception e) {
-                log.warn("Unexpected error sending Twilio SMS to {}: {}. Falling back to console OTP.",
+                log.warn("Unexpected error sending Twilio SMS to {}: {}. Falling back to console log.",
                         phoneNumber, e.getMessage());
             }
         }

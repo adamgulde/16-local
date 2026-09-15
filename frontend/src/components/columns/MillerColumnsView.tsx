@@ -176,19 +176,33 @@ export const MillerColumnsView = ({
     });
   }, []);
 
+  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
+  const pendingActionIdsRef = useRef<Set<string>>(new Set());
+
   // Handle connection request
   const handleSendRequest = async (targetId: string) => {
+    if (pendingActionIdsRef.current.has(targetId)) return;
+    pendingActionIdsRef.current.add(targetId);
+    setPendingActionIds(new Set(pendingActionIdsRef.current));
     try {
       await sendRequest(targetId);
       await loadRequests();
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to send request');
+    } finally {
+      setTimeout(() => {
+        pendingActionIdsRef.current.delete(targetId);
+        setPendingActionIds(new Set(pendingActionIdsRef.current));
+      }, 300);
     }
   };
 
   // Handle disconnect
   const handleDisconnect = async (targetId: string) => {
+    if (pendingActionIdsRef.current.has(targetId)) return;
     if (!confirm('Are you sure you want to disconnect?')) return;
+    pendingActionIdsRef.current.add(targetId);
+    setPendingActionIds(new Set(pendingActionIdsRef.current));
     try {
       await disconnectUser(targetId);
       // Reload path
@@ -198,6 +212,11 @@ export const MillerColumnsView = ({
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to disconnect');
+    } finally {
+      setTimeout(() => {
+        pendingActionIdsRef.current.delete(targetId);
+        setPendingActionIds(new Set(pendingActionIdsRef.current));
+      }, 300);
     }
   };
 
@@ -621,12 +640,14 @@ export const MillerColumnsView = ({
                 !(currentUser.relationships || []).includes(inspectedUser.id)
               }
               isRequestPending={isRequestPending(inspectedUser.id)}
+              isSendingRequest={pendingActionIds.has(inspectedUser.id)}
               onDisconnect={() => handleDisconnect(inspectedUser.id)}
               showDisconnect={
                 inspectedUser.id !== currentUser.id &&
                 ((inspectedUser.relationships || []).includes(currentUser.id) ||
                   (currentUser.relationships || []).includes(inspectedUser.id))
               }
+              isDisconnecting={pendingActionIds.has(inspectedUser.id)}
               onSelectNode={(nodeId) => {
                 // If clicked a relationship inside UserCard, find in cache or inspect
                 onSwitchToGraph(nodeId);
@@ -669,12 +690,14 @@ export const MillerColumnsView = ({
                 !(currentUser.relationships || []).includes(inspectedUser.id)
               }
               isRequestPending={isRequestPending(inspectedUser.id)}
+              isSendingRequest={pendingActionIds.has(inspectedUser.id)}
               onDisconnect={() => handleDisconnect(inspectedUser.id)}
               showDisconnect={
                 inspectedUser.id !== currentUser.id &&
                 ((inspectedUser.relationships || []).includes(currentUser.id) ||
                   (currentUser.relationships || []).includes(inspectedUser.id))
               }
+              isDisconnecting={pendingActionIds.has(inspectedUser.id)}
               onSelectNode={(nodeId) => {
                 setShowMobileInspector(false);
                 onSwitchToGraph(nodeId);

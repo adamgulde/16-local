@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { updateBio } from '../services/userService';
 import { sectionHeaderStyle } from './cardStyles';
 
@@ -15,6 +15,7 @@ export const BioSection = ({ subjectId, bio, isCurrentUser }: BioSectionProps) =
   const [draft, setDraft] = useState(bio);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -24,13 +25,18 @@ export const BioSection = ({ subjectId, bio, isCurrentUser }: BioSectionProps) =
   }, [subjectId, bio]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       await updateBio(subjectId, draft);
       setSavedBio(draft);
       setEditing(false);
     } finally {
-      setSaving(false);
+      setTimeout(() => {
+        savingRef.current = false;
+        setSaving(false);
+      }, 300);
     }
   };
 
@@ -51,6 +57,7 @@ export const BioSection = ({ subjectId, bio, isCurrentUser }: BioSectionProps) =
               {saving ? 'Saving...' : 'Save'}
             </button>
             <button
+              disabled={saving}
               onClick={() => {
                 setDraft(savedBio);
                 setEditing(false);

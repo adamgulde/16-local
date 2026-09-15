@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { fetchAllTags, fetchTagsForUser, addTagToUser, removeTagFromUser } from '../services/tagService';
 import type { Tag, TagAssignment } from '../services/tagService';
 import { fetchNote, saveNote } from '../services/noteService';
@@ -43,6 +43,12 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
   const [noteDraft, setNoteDraft] = useState('');
   const [editingNote, setEditingNote] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
+  const noteSavingRef = useRef(false);
+
+  const [isTagSubmitting, setIsTagSubmitting] = useState(false);
+  const tagSubmittingRef = useRef(false);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const removingIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -75,6 +81,9 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
   const canAddCustom = tagInput.trim().length > 0 && !exactDictionaryMatch && !appliedLabels.has(tagInput.trim().toLowerCase());
 
   const handleAddDictionaryTag = async (tag: Tag) => {
+    if (tagSubmittingRef.current) return;
+    tagSubmittingRef.current = true;
+    setIsTagSubmitting(true);
     setTagError(null);
     try {
       const created = await addTagToUser(subjectId, { tagId: tag.id });
@@ -83,12 +92,20 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
       setShowSuggestions(false);
     } catch {
       setTagError('Could not add tag.');
+    } finally {
+      setTimeout(() => {
+        tagSubmittingRef.current = false;
+        setIsTagSubmitting(false);
+      }, 300);
     }
   };
 
   const handleAddCustomTag = async () => {
+    if (tagSubmittingRef.current) return;
     const label = tagInput.trim();
     if (!label) return;
+    tagSubmittingRef.current = true;
+    setIsTagSubmitting(true);
     setTagError(null);
     try {
       const created = await addTagToUser(subjectId, { customLabel: label });
@@ -97,27 +114,43 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
       setShowSuggestions(false);
     } catch {
       setTagError('Could not add tag.');
+    } finally {
+      setTimeout(() => {
+        tagSubmittingRef.current = false;
+        setIsTagSubmitting(false);
+      }, 300);
     }
   };
 
   const handleRemoveTag = async (assignmentId: string) => {
+    if (removingIdsRef.current.has(assignmentId)) return;
+    removingIdsRef.current.add(assignmentId);
+    setRemovingIds(new Set(removingIdsRef.current));
     setTagError(null);
     try {
       await removeTagFromUser(subjectId, assignmentId);
       setTags((prev) => prev.filter((t) => t.id !== assignmentId));
     } catch {
       setTagError('Could not remove tag.');
+    } finally {
+      removingIdsRef.current.delete(assignmentId);
+      setRemovingIds(new Set(removingIdsRef.current));
     }
   };
 
   const handleSaveNote = async () => {
+    if (noteSavingRef.current) return;
+    noteSavingRef.current = true;
     setNoteSaving(true);
     try {
       await saveNote(subjectId, noteDraft);
       setSavedNote(noteDraft);
       setEditingNote(false);
     } finally {
-      setNoteSaving(false);
+      setTimeout(() => {
+        noteSavingRef.current = false;
+        setNoteSaving(false);
+      }, 300);
     }
   };
 
@@ -142,12 +175,13 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
               {t.isMine && (
                 <button
                   onClick={() => handleRemoveTag(t.id)}
+                  disabled={removingIds.has(t.id)}
                   aria-label={`Remove ${t.label}`}
                   style={{
                     background: 'none',
                     border: 'none',
                     color: isPrivateMine ? '#e9d5ff' : '#9a9a9a',
-                    cursor: 'pointer',
+                    cursor: removingIds.has(t.id) ? 'not-allowed' : 'pointer',
                     padding: 0,
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -196,8 +230,9 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
               <button
                 key={t.id}
                 type="button"
+                disabled={isTagSubmitting}
                 onClick={() => handleAddDictionaryTag(t)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '14px', color: '#f0f0f0', cursor: 'pointer' }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', borderBottom: '1px solid #3a3a40', fontSize: '14px', color: isTagSubmitting ? '#6a6a70' : '#f0f0f0', cursor: isTagSubmitting ? 'not-allowed' : 'pointer' }}
               >
                 <span style={{ color: '#9a9a9a', fontSize: '11px', marginRight: '6px' }}>[{t.category}]</span>
                 {t.label}
@@ -206,10 +241,13 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
             {canAddCustom && (
               <button
                 type="button"
+                disabled={isTagSubmitting}
                 onClick={handleAddCustomTag}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', fontSize: '14px', color: '#c084fc', cursor: 'pointer' }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', fontSize: '14px', color: isTagSubmitting ? '#6a6a70' : '#c084fc', cursor: isTagSubmitting ? 'not-allowed' : 'pointer' }}
               >
-                {isCurrentUser
+                {isTagSubmitting
+                  ? 'Adding tag...'
+                  : isCurrentUser
                   ? `+ Add custom tag: "${tagInput.trim()}"`
                   : `+ Add private custom tag: "${tagInput.trim()}" (visible only to you)`}
               </button>
@@ -238,6 +276,7 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
                     {noteSaving ? 'Saving...' : 'Save'}
                   </button>
                   <button
+                    disabled={noteSaving}
                     onClick={() => {
                       setNoteDraft(savedNote);
                       setEditingNote(false);

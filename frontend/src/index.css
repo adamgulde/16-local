@@ -58,8 +58,14 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background: var(--code-bg);
+}
+
+button:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+  pointer-events: none !important;
 }
 
 a {

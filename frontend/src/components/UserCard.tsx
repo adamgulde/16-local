@@ -14,10 +14,12 @@ interface UserCardProps {
   onSendRequest?: () => void;
   showSendRequest?: boolean;
   isRequestPending?: boolean;
+  isSendingRequest?: boolean;
   onFindPath?: () => void;
   showFindPath?: boolean;
   onDisconnect?: () => void;
   showDisconnect?: boolean;
+  isDisconnecting?: boolean;
   onSelectNode: (nodeId: string) => void;
   isCurrentUser: boolean;
   style?: CSSProperties;
@@ -47,10 +49,12 @@ export const UserCard = ({
   onSendRequest,
   showSendRequest,
   isRequestPending,
+  isSendingRequest,
   onFindPath,
   showFindPath,
   onDisconnect,
   showDisconnect,
+  isDisconnecting,
   onSelectNode,
   isCurrentUser,
   style,
@@ -103,22 +107,23 @@ export const UserCard = ({
           )}
           {showSendRequest && (
             <button
-              onClick={isRequestPending ? undefined : onSendRequest}
-              disabled={isRequestPending}
+              onClick={isRequestPending || isSendingRequest ? undefined : onSendRequest}
+              disabled={isRequestPending || isSendingRequest}
               style={{
                 ...primaryButtonStyle,
-                background: isRequestPending ? '#2c2c2e' : '#1e3a5f',
-                borderColor: isRequestPending ? '#3a3a40' : '#2b5278',
-                color: isRequestPending ? '#9a9a9a' : '#fff',
-                cursor: isRequestPending ? 'default' : 'pointer',
+                background: isRequestPending || isSendingRequest ? '#2c2c2e' : '#1e3a5f',
+                borderColor: isRequestPending || isSendingRequest ? '#3a3a40' : '#2b5278',
+                color: isRequestPending || isSendingRequest ? '#9a9a9a' : '#fff',
+                cursor: isRequestPending || isSendingRequest ? 'not-allowed' : 'pointer',
               }}
             >
-              {isRequestPending ? 'Request Sent' : 'Send Connection Request'}
+              {isSendingRequest ? 'Sending Request...' : isRequestPending ? 'Request Sent' : 'Send Connection Request'}
             </button>
           )}
           {showDisconnect && (
             <button
-              onClick={onDisconnect}
+              onClick={isDisconnecting ? undefined : onDisconnect}
+              disabled={isDisconnecting}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -130,12 +135,12 @@ export const UserCard = ({
                 padding: '8px 16px',
                 minHeight: 44,
                 fontSize: '13px',
-                cursor: 'pointer',
+                cursor: isDisconnecting ? 'not-allowed' : 'pointer',
                 fontWeight: 500,
                 touchAction: 'manipulation',
               }}
             >
-              <DisconnectIcon size={16} /> Disconnect
+              {isDisconnecting ? 'Disconnecting...' : (<><DisconnectIcon size={16} /> Disconnect</>)}
             </button>
           )}
         </div>

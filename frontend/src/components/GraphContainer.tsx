@@ -692,15 +692,17 @@ export const GraphContainer = ({
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             onClick={() => c.handleAcceptRequest(req.id)}
-                            style={{ padding: '3px 8px', fontSize: '11px', background: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                            disabled={c.isActionPending(req.id)}
+                            style={{ padding: '3px 8px', fontSize: '11px', background: '#2e7d32', color: 'white', border: 'none', borderRadius: '4px', cursor: c.isActionPending(req.id) ? 'not-allowed' : 'pointer' }}
                           >
-                            Accept
+                            {c.isActionPending(req.id) ? 'Accepting...' : 'Accept'}
                           </button>
                           <button
                             onClick={() => c.handleDeclineRequest(req.id)}
-                            style={{ padding: '3px 8px', fontSize: '11px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                            disabled={c.isActionPending(req.id)}
+                            style={{ padding: '3px 8px', fontSize: '11px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '4px', cursor: c.isActionPending(req.id) ? 'not-allowed' : 'pointer' }}
                           >
-                            Decline
+                            {c.isActionPending(req.id) ? 'Declining...' : 'Decline'}
                           </button>
                         </div>
                       </div>
@@ -797,6 +799,7 @@ export const GraphContainer = ({
                             ) : incomingReqId ? (
                               <button
                                 onClick={() => c.handleAcceptRequest(incomingReqId)}
+                                disabled={c.isActionPending(incomingReqId)}
                                 style={{
                                   padding: '3px 8px',
                                   fontSize: '11px',
@@ -804,16 +807,17 @@ export const GraphContainer = ({
                                   color: 'white',
                                   border: 'none',
                                   borderRadius: '4px',
-                                  cursor: 'pointer',
+                                  cursor: c.isActionPending(incomingReqId) ? 'not-allowed' : 'pointer',
                                 }}
                               >
-                                Accept
+                                {c.isActionPending(incomingReqId) ? 'Accepting...' : 'Accept'}
                               </button>
                             ) : isSent ? (
                               <span style={{ fontSize: '11px', color: '#9a9a9a' }}>Requested</span>
                             ) : (
                               <button
                                 onClick={() => c.handleSendRequest(u.id)}
+                                disabled={c.isActionPending(u.id)}
                                 style={{
                                   padding: '3px 8px',
                                   fontSize: '11px',
@@ -821,10 +825,10 @@ export const GraphContainer = ({
                                   color: 'white',
                                   border: 'none',
                                   borderRadius: '4px',
-                                  cursor: 'pointer',
+                                  cursor: c.isActionPending(u.id) ? 'not-allowed' : 'pointer',
                                 }}
                               >
-                                + Connect
+                                {c.isActionPending(u.id) ? 'Connecting...' : '+ Connect'}
                               </button>
                             )}
                           </div>
@@ -888,6 +892,7 @@ export const GraphContainer = ({
                 </p>
                 <select
                   value={c.autoRejectDegree ?? 'off'}
+                  disabled={c.isUpdatingAutoReject}
                   onChange={(e) => {
                     const val = e.target.value === 'off' ? null : Number(e.target.value);
                     c.handleUpdateAutoReject(val);
@@ -900,6 +905,7 @@ export const GraphContainer = ({
                     borderRadius: '6px',
                     color: '#f0f0f0',
                     fontSize: '13px',
+                    cursor: c.isUpdatingAutoReject ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <option value="off">Off (Allow from anyone)</option>
@@ -1151,10 +1157,12 @@ export const GraphContainer = ({
             onSendRequest={() => c.handleSendRequest(c.selectedUser!.id)}
             showSendRequest={c.selectedUser.id !== currentUser.id && !c.connectedUserIds.has(c.selectedUser.id)}
             isRequestPending={c.sentRequestUserIds.has(c.selectedUser.id)}
+            isSendingRequest={c.isActionPending(c.selectedUser.id)}
             onFindPath={() => c.handleFindPath(c.selectedUser!.id)}
             showFindPath={c.selectedUser.id !== currentUser.id}
             onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}
             showDisconnect={c.selectedUser.id !== currentUser.id && c.connectedUserIds.has(c.selectedUser.id)}
+            isDisconnecting={c.isActionPending(c.selectedUser.id)}
             onSelectNode={(nodeId: string) => c.focusUser(nodeId)}
             isCurrentUser={c.selectedUser.id === currentUser.id}
             style={{ background: 'transparent', border: 'none' }}
@@ -1288,24 +1296,6 @@ export const GraphContainer = ({
         <button onClick={c.handleGlobalZoom} title="Global Zoom" style={hudBtnStyle}>
           <MaximizeIcon size={18} />
         </button>
-      </div>
-
-      {/* Discreet FPS Counter in Bottom-Left */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 8,
-          left: 12,
-          color: 'rgba(0, 255, 128, 0.6)',
-          background: 'rgba(0,0,0,0.4)',
-          fontFamily: 'monospace',
-          fontSize: '11px',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          pointerEvents: 'none',
-        }}
-      >
-        {c.fps} fps
       </div>
     </div>
   );

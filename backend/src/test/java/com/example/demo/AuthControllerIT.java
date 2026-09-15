@@ -288,4 +288,39 @@ public class AuthControllerIT {
         assertThat(verifyResp100.getBody().token()).isNotBlank();
         assertThat(verifyResp100.getBody().user().defaultUser()).isTrue();
     }
+
+    @Test
+    void shouldVerifySignUpOtpAndThenRegister() {
+        String phone = nextPhone("555333");
+
+        // 1. Initiate sign-up OTP
+        ResponseEntity<Void> initResp = restTemplate.postForEntity(
+                baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(phone, null), Void.class);
+        assertThat(initResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        String code = getOtp(phone);
+
+        // 2. Immediate verification at OTP step
+        ResponseEntity<Void> verifyResp = restTemplate.postForEntity(
+                baseUrl("/api/auth/signup/verify-otp"),
+                new VerifyOtpRequest(phone, code), Void.class);
+        assertThat(verifyResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Verify that OTP code was converted to "VERIFIED"
+        assertThat(getOtp(phone)).isEqualTo("VERIFIED");
+
+        // 3. Complete registration with name
+        RegisterRequest request = new RegisterRequest(phone, code, "Alice", "Smith", null);
+        ResponseEntity<AuthResponse> regResp = restTemplate.postForEntity(
+                baseUrl("/api/auth/register"), request, AuthResponse.class);
+        assertThat(regResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(regResp.getBody()).isNotNull();
+        assertThat(regResp.getBody().token()).isNotBlank();
+        assertThat(regResp.getBody().user().firstName()).isEqualTo("Alice");
+        assertThat(regResp.getBody().user().lastName()).isEqualTo("Smith");
+
+        // Stored OTP is deleted upon successful registration
+        assertThat(otpRepository.findByPhoneNumber(cleanPhone(phone))).isEmpty();
+    }
 }

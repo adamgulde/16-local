@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { User } from '../../services/userService';
-import { initiateSignUpOtp, register, saveSession, validateInviteCode } from '../../services/authService';
+import { initiateSignUpOtp, register, saveSession, validateInviteCode, verifySignUpOtp } from '../../services/authService';
 import { extractErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
+import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
 interface RegisterProps {
   onLogin: (user: User) => void;
@@ -29,6 +30,9 @@ export const Register = ({ onLogin }: RegisterProps) => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+
+  const submittingRef = useRef(false);
+  const { cooldown, isCoolingDown, startCooldown } = useOtpCooldown(30);
 
   // Validate invite code whenever it changes
   useEffect(() => {
@@ -69,6 +73,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
   }, [inviteCode]);
 
   const handleInitiateSignUp = async () => {
+    if (submittingRef.current) return;
     const trimmedPhone = phoneNumber.trim();
     if (!trimmedPhone) {
       setError('Please enter your phone number.');
@@ -84,29 +89,48 @@ export const Register = ({ onLogin }: RegisterProps) => {
     }
 
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       await initiateSignUpOtp(trimmedPhone, inviteCode.trim() || undefined);
       setStep('OTP');
       setResendSuccess(false);
+      startCooldown(30);
     } catch (err) {
       setError(extractErrorMessage(err) || 'Failed to send verification code.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
-  const handleVerifyOtpStep = () => {
+  const handleVerifyOtpStep = async () => {
+    if (submittingRef.current) return;
     const trimmedCode = code.trim();
     if (!trimmedCode) {
       setError('Please enter the 6-digit verification code.');
       return;
     }
     setError('');
-    setStep('PROFILE');
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await verifySignUpOtp(phoneNumber.trim(), trimmedCode);
+      setStep('PROFILE');
+    } catch (err) {
+      setError(extractErrorMessage(err) || 'Invalid or expired verification code.');
+    } finally {
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
+    }
   };
 
   const handleCompleteRegistration = async () => {
+    if (submittingRef.current) return;
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
     if (!trimmedFirst || !trimmedLast) {
@@ -115,6 +139,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
     }
 
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const auth = await register({
@@ -129,20 +154,29 @@ export const Register = ({ onLogin }: RegisterProps) => {
     } catch (err) {
       setError(extractErrorMessage(err) || 'Registration failed.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
   const handleResendOtp = async () => {
+    if (submittingRef.current || isCoolingDown) return;
     setError('');
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       await initiateSignUpOtp(phoneNumber.trim(), inviteCode.trim() || undefined);
       setResendSuccess(true);
+      startCooldown(30);
     } catch (err) {
       setError(extractErrorMessage(err) || 'Failed to resend code.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }, 300);
     }
   };
 
@@ -214,7 +248,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', marginTop: '4px' }}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold', marginTop: '4px' }}
             >
               {isSubmitting ? 'Sending Code...' : 'Continue'}
             </button>
@@ -243,26 +277,28 @@ export const Register = ({ onLogin }: RegisterProps) => {
 
             <button
               type="submit"
-              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              disabled={isSubmitting}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
             >
-              Verify Code
+              {isSubmitting ? 'Verifying...' : 'Verify Code'}
             </button>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => { setStep('PHONE_INVITE'); setError(''); }}
-                style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontSize: '13px', padding: 0 }}
               >
                 ← Back
               </button>
               <button
                 type="button"
                 onClick={handleResendOtp}
-                disabled={isSubmitting}
-                style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                disabled={isSubmitting || isCoolingDown}
+                style={{ background: 'none', border: 'none', color: isCoolingDown ? '#6a6a70' : '#9a9a9a', cursor: isSubmitting || isCoolingDown ? 'not-allowed' : 'pointer', fontSize: '13px', padding: 0 }}
               >
-                Resend Code
+                {isSubmitting ? 'Sending...' : isCoolingDown ? `Resend in ${cooldown}s` : 'Resend Code'}
               </button>
             </div>
             {resendSuccess && <p style={{ color: '#4caf50', fontSize: '12px', margin: 0, textAlign: 'center' }}>New code sent!</p>}
@@ -308,15 +344,16 @@ export const Register = ({ onLogin }: RegisterProps) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              style={{ padding: '10px', background: '#2a5f9e', color: 'white', border: 'none', borderRadius: '6px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
             >
               {isSubmitting ? 'Creating Account...' : 'Complete & Display Graph'}
             </button>
 
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => { setStep('OTP'); setError(''); }}
-              style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', padding: 0, textAlign: 'left' }}
+              style={{ background: 'none', border: 'none', color: '#6ab0ff', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontSize: '13px', padding: 0, textAlign: 'left' }}
             >
               ← Back to Code
             </button>

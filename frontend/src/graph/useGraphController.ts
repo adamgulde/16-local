@@ -198,26 +198,6 @@ export const useGraphController = (
     return map;
   }, [activePath]);
 
-  // --- FPS counter ---
-  const [fps, setFps] = useState(0);
-  useEffect(() => {
-    let frameCount = 0;
-    let lastTime = performance.now();
-    let rafId: number;
-    const tick = () => {
-      frameCount += 1;
-      const now = performance.now();
-      if (now - lastTime >= 500) {
-        setFps(Math.round((frameCount * 1000) / (now - lastTime)));
-        frameCount = 0;
-        lastTime = now;
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
   const loadData = useCallback(async () => {
     try {
       const [usersData, requestsData] = await Promise.all([fetchUsers(), fetchMyRequests()]);
@@ -441,14 +421,30 @@ export const useGraphController = (
   }, [viewMode, degree, currentUser.id, loadReach]);
 
   // --- Request actions ---
+  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
+  const pendingActionIdsRef = useRef<Set<string>>(new Set());
+
+  const isActionPending = useCallback(
+    (id: string) => pendingActionIds.has(id),
+    [pendingActionIds]
+  );
+
   const handleSendRequest = useCallback(
     async (receiverId: string) => {
+      if (pendingActionIdsRef.current.has(receiverId)) return;
+      pendingActionIdsRef.current.add(receiverId);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       setActionError(null);
       try {
         await sendRequest(receiverId);
         await loadData();
       } catch (err) {
         setActionError(extractErrorMessage(err) || 'Could not send connection request.');
+      } finally {
+        setTimeout(() => {
+          pendingActionIdsRef.current.delete(receiverId);
+          setPendingActionIds(new Set(pendingActionIdsRef.current));
+        }, 300);
       }
     },
     [loadData]
@@ -456,12 +452,20 @@ export const useGraphController = (
 
   const handleAcceptRequest = useCallback(
     async (requestId: string) => {
+      if (pendingActionIdsRef.current.has(requestId)) return;
+      pendingActionIdsRef.current.add(requestId);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       setActionError(null);
       try {
         await acceptRequest(requestId);
         await loadData();
       } catch {
         setActionError('Could not accept connection request.');
+      } finally {
+        setTimeout(() => {
+          pendingActionIdsRef.current.delete(requestId);
+          setPendingActionIds(new Set(pendingActionIdsRef.current));
+        }, 300);
       }
     },
     [loadData]
@@ -469,12 +473,20 @@ export const useGraphController = (
 
   const handleDeclineRequest = useCallback(
     async (requestId: string) => {
+      if (pendingActionIdsRef.current.has(requestId)) return;
+      pendingActionIdsRef.current.add(requestId);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       setActionError(null);
       try {
         await declineRequest(requestId);
         await loadData();
       } catch {
         setActionError('Could not decline connection request.');
+      } finally {
+        setTimeout(() => {
+          pendingActionIdsRef.current.delete(requestId);
+          setPendingActionIds(new Set(pendingActionIdsRef.current));
+        }, 300);
       }
     },
     [loadData]
@@ -482,6 +494,9 @@ export const useGraphController = (
 
   const handleDisconnect = useCallback(
     async (targetUserId: string) => {
+      if (pendingActionIdsRef.current.has(targetUserId)) return;
+      pendingActionIdsRef.current.add(targetUserId);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       setActionError(null);
       try {
         await disconnectUser(targetUserId);
@@ -492,19 +507,35 @@ export const useGraphController = (
         }
       } catch {
         setActionError('Could not disconnect user.');
+      } finally {
+        setTimeout(() => {
+          pendingActionIdsRef.current.delete(targetUserId);
+          setPendingActionIds(new Set(pendingActionIdsRef.current));
+        }, 300);
       }
     },
     [loadData, selectedUser, clearSelection]
   );
 
+  const updatingAutoRejectRef = useRef(false);
+  const [isUpdatingAutoReject, setIsUpdatingAutoReject] = useState(false);
+
   const handleUpdateAutoReject = useCallback(
     async (degreeLimit: number | null) => {
+      if (updatingAutoRejectRef.current) return;
+      updatingAutoRejectRef.current = true;
+      setIsUpdatingAutoReject(true);
       setActionError(null);
       try {
         await updateAutoRejectSetting(degreeLimit);
         setAutoRejectDegree(degreeLimit);
       } catch {
         setActionError('Could not update auto-reject setting.');
+      } finally {
+        setTimeout(() => {
+          updatingAutoRejectRef.current = false;
+          setIsUpdatingAutoReject(false);
+        }, 300);
       }
     },
     []
@@ -571,7 +602,6 @@ export const useGraphController = (
     setShowPendingConnections,
     requestsTab,
     setRequestsTab,
-    fps,
     viewMode,
     setViewMode,
     degree,
@@ -595,6 +625,9 @@ export const useGraphController = (
     handleDeclineRequest,
     handleDisconnect,
     handleUpdateAutoReject,
+    pendingActionIds,
+    isActionPending,
+    isUpdatingAutoReject,
     hasGraphUpdate,
     autoApplyUpdates,
     setAutoApplyUpdates,
