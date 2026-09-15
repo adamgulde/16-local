@@ -20,7 +20,7 @@ USER spring:spring
 COPY --from=build /app/build/libs/*.jar app.jar
 
 # JVM memory management tailored for container limits
-ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom"
+ENV JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true"
 
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
