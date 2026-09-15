@@ -1,5 +1,6 @@
 package com.example.demo.model;
 
+import com.example.demo.security.EncryptedPhoneNumberConverter;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -23,6 +24,7 @@ public class User {
     private String firstName;
     private String lastName;
 
+    @Convert(converter = EncryptedPhoneNumberConverter.class)
     @Column(unique = true, nullable = false)
     private String phoneNumber;
 

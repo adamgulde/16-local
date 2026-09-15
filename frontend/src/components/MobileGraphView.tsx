@@ -33,7 +33,6 @@ import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 
 interface MobileGraphViewProps {
   currentUser: User;
-  onLogout: () => void;
   onSwitchToColumns?: () => void;
   initialFocusUserId?: string | null;
   initialFindPathTargetId?: string | null;
@@ -103,25 +102,31 @@ const fabActionStyle: CSSProperties = {
 
 export const MobileGraphView = ({
   currentUser,
-  onLogout,
   onSwitchToColumns,
   initialFocusUserId,
   initialFindPathTargetId,
 }: MobileGraphViewProps) => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(currentUser, fgRef);
+  const hasOrientedRef = useRef(false);
 
   useEffect(() => {
-    if (initialFocusUserId && c.users.length > 0) {
-      c.handleSelectSearchResult(initialFocusUserId);
+    if (c.graphData.nodes.length > 0 && !hasOrientedRef.current) {
+      if (initialFocusUserId) {
+        hasOrientedRef.current = true;
+        c.handleSelectSearchResult(initialFocusUserId);
+      } else if (initialFindPathTargetId) {
+        hasOrientedRef.current = true;
+        c.handleFindPath(initialFindPathTargetId);
+      } else {
+        hasOrientedRef.current = true;
+        const timer = setTimeout(() => {
+          c.handleLocateMe();
+        }, 150);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [initialFocusUserId, c.users.length]);
-
-  useEffect(() => {
-    if (initialFindPathTargetId && c.users.length > 0) {
-      c.handleFindPath(initialFindPathTargetId);
-    }
-  }, [initialFindPathTargetId, c.users.length]);
+  }, [c.graphData.nodes, initialFocusUserId, initialFindPathTargetId, c.handleSelectSearchResult, c.handleFindPath, c.handleLocateMe]);
 
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -595,10 +600,11 @@ export const MobileGraphView = ({
               backdropFilter: 'blur(16px)',
               WebkitBackdropFilter: 'blur(16px)',
               border: '1px solid #3a3a40',
+              boxSizing: 'border-box',
               borderRadius: '12px',
-              padding: '12px 14px',
+              padding: '14px 16px',
               boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-              width: '210px',
+              width: '230px',
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
@@ -621,16 +627,34 @@ export const MobileGraphView = ({
                 const val = Number(e.target.value);
                 c.setMaxDistance(val === 7 ? Infinity : val);
               }}
-              style={{ width: '100%', accentColor: '#3d8bff', height: '24px', cursor: 'pointer' }}
+              style={{
+                width: '100%',
+                margin: 0,
+                padding: 0,
+                boxSizing: 'border-box',
+                accentColor: '#3d8bff',
+                height: '24px',
+                cursor: 'pointer',
+                display: 'block',
+              }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#6a6a70' }}>
-              <span>1</span>
-              <span>2</span>
-              <span>3</span>
-              <span>4</span>
-              <span>5</span>
-              <span>6</span>
-              <span>All</span>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '0 8px',
+                fontSize: '10px',
+                color: '#9a9a9a',
+                boxSizing: 'border-box',
+              }}
+            >
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>1</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>2</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>3</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>4</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>5</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>6</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>All</span>
             </div>
           </div>
         )}
@@ -1204,9 +1228,25 @@ export const MobileGraphView = ({
         >
           Refresh Graph Now
         </button>
-        <button onClick={onLogout} style={{ ...fabActionStyle, marginTop: '16px', width: '100%', borderColor: '#d32f2f', color: '#ff6b6b', background: 'rgba(211, 47, 47, 0.12)' }}>
-          Log out
-        </button>
+        <a
+          href="/instructions"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            ...fabActionStyle,
+            display: 'block',
+            textAlign: 'center',
+            textDecoration: 'none',
+            marginTop: '10px',
+            width: '100%',
+            boxSizing: 'border-box',
+            borderColor: '#3a3a40',
+            color: '#f0f0f0',
+            background: '#2c2c2e',
+          }}
+        >
+          📖 Instructions & Guide
+        </a>
       </BottomSheet>
 
       {/* Selected-user card */}
@@ -1236,6 +1276,8 @@ export const MobileGraphView = ({
               isDisconnecting={c.isActionPending(c.selectedUser.id)}
               onSelectNode={(nodeId: string) => selectAndShowCard(nodeId)}
               isCurrentUser={c.selectedUser.id === currentUser.id}
+              onBioUpdated={(newBio) => c.handleBioUpdated(c.selectedUser!.id, newBio)}
+              compact={true}
             />
           </>
         )}
@@ -1243,7 +1285,7 @@ export const MobileGraphView = ({
 
       {/* Path breadcrumb */}
       <BottomSheet open={activeSheet === 'path' && c.activePath !== null} onClose={closePathSheet} title="Path Details">
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
           {c.pathBreadcrumb.map((hop, index) => (
             <div key={hop.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
               <button
@@ -1253,9 +1295,9 @@ export const MobileGraphView = ({
                   border: 'none',
                   color: '#6ab0ff',
                   textDecoration: 'underline',
-                  padding: '8px 0',
-                  minHeight: 44,
-                  fontSize: '14px',
+                  padding: '4px 0',
+                  minHeight: 32,
+                  fontSize: '13px',
                   fontWeight: index === 0 || index === c.pathBreadcrumb.length - 1 ? 600 : 400,
                   cursor: 'pointer',
                   textAlign: 'left',
@@ -1263,11 +1305,11 @@ export const MobileGraphView = ({
               >
                 {index === 0 ? `Start: ${fullName(hop)}` : index === c.pathBreadcrumb.length - 1 ? `Target: ${fullName(hop)}` : `${index}. ${fullName(hop)}`}
               </button>
-              {index < c.pathBreadcrumb.length - 1 && <span style={{ color: '#9a9a9a', paddingLeft: '8px', fontSize: '14px' }}>↓</span>}
+              {index < c.pathBreadcrumb.length - 1 && <span style={{ color: '#9a9a9a', paddingLeft: '4px', fontSize: '11px', lineHeight: '12px' }}>↓</span>}
             </div>
           ))}
         </div>
-        <button style={{ ...fabActionStyle, marginTop: '14px', width: '100%' }} onClick={() => { c.handleClearPath(); setActiveSheet(null); }}>
+        <button style={{ ...fabActionStyle, marginTop: '10px', width: '100%', minHeight: 38, fontSize: '13px' }} onClick={() => { c.handleClearPath(); setActiveSheet(null); }}>
           Clear path
         </button>
       </BottomSheet>

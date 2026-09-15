@@ -4,6 +4,7 @@ interface BottomSheetProps {
   open: boolean;
   onClose: () => void;
   title?: string;
+  maxHeight?: string;
   children: ReactNode;
 }
 
@@ -11,7 +12,7 @@ interface BottomSheetProps {
 // every sheet carries its own always-visible, touch-sized close button instead. Deliberately no
 // full-screen backdrop — the graph underneath a sheet should stay tappable (selecting a
 // different node while a card is open is expected behavior, not blocked by a modal scrim).
-export const BottomSheet = ({ open, onClose, title, children }: BottomSheetProps) => {
+export const BottomSheet = ({ open, onClose, title, maxHeight = '58dvh', children }: BottomSheetProps) => {
   if (!open) return null;
   return (
     <div
@@ -20,7 +21,7 @@ export const BottomSheet = ({ open, onClose, title, children }: BottomSheetProps
         left: 0,
         right: 0,
         bottom: 0,
-        maxHeight: '75dvh',
+        maxHeight,
         background: 'rgba(28, 28, 30, 0.96)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',

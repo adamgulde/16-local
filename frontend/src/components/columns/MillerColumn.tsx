@@ -122,20 +122,6 @@ export const MillerColumn = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                color: '#3d8bff',
-                background: 'rgba(61, 139, 255, 0.15)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-              }}
-            >
-              Level {depth + 1}
-            </span>
             <h3
               style={{
                 margin: 0,

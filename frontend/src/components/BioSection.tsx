@@ -6,11 +6,12 @@ interface BioSectionProps {
   subjectId: string;
   bio: string;
   isCurrentUser: boolean;
+  onBioUpdated?: (newBio: string) => void;
 }
 
 // Public, unlike Notes/Tags-on-others — anyone viewing this card sees it, but only the subject
 // themselves can ever change it (enforced server-side on the requesting principal).
-export const BioSection = ({ subjectId, bio, isCurrentUser }: BioSectionProps) => {
+export const BioSection = ({ subjectId, bio, isCurrentUser, onBioUpdated }: BioSectionProps) => {
   const [savedBio, setSavedBio] = useState(bio);
   const [draft, setDraft] = useState(bio);
   const [editing, setEditing] = useState(false);
@@ -32,6 +33,7 @@ export const BioSection = ({ subjectId, bio, isCurrentUser }: BioSectionProps) =
       await updateBio(subjectId, draft);
       setSavedBio(draft);
       setEditing(false);
+      onBioUpdated?.(draft);
     } finally {
       setTimeout(() => {
         savingRef.current = false;

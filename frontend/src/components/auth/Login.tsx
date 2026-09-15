@@ -11,7 +11,7 @@ interface LoginProps {
 }
 
 export const Login = ({ onLogin }: LoginProps) => {
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(() => localStorage.getItem('remembered_phone') || '');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
   const [error, setError] = useState('');
@@ -67,6 +67,7 @@ export const Login = ({ onLogin }: LoginProps) => {
     try {
       const auth = await verifySignInOtp(resolvedPhone, trimmedCode);
       saveSession(auth);
+      localStorage.setItem('remembered_phone', resolvedPhone);
       onLogin(auth.user);
     } catch (err) {
       setError(extractErrorMessage(err) || 'Invalid or expired code.');

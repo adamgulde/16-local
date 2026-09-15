@@ -23,7 +23,7 @@ public class AuthTokenService {
 
     private final AuthTokenRepository authTokenRepository;
 
-    @Value("${app.auth.token-ttl-hours:168}")
+    @Value("${app.auth.token-ttl-hours:720}")
     private long tokenTtlHours;
 
     @Transactional

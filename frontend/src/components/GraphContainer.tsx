@@ -35,7 +35,6 @@ import { searchUsersApi } from '../services/userService';
 
 interface GraphContainerProps {
   currentUser: User;
-  onLogout: () => void;
   onSwitchToColumns?: () => void;
   initialFocusUserId?: string | null;
   initialFindPathTargetId?: string | null;
@@ -72,25 +71,31 @@ const hudBtnStyle: CSSProperties = {
 
 export const GraphContainer = ({
   currentUser,
-  onLogout,
   onSwitchToColumns,
   initialFocusUserId,
   initialFindPathTargetId,
 }: GraphContainerProps) => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(currentUser, fgRef);
+  const hasOrientedRef = useRef(false);
 
   useEffect(() => {
-    if (initialFocusUserId && c.users.length > 0) {
-      c.handleSelectSearchResult(initialFocusUserId);
+    if (c.graphData.nodes.length > 0 && !hasOrientedRef.current) {
+      if (initialFocusUserId) {
+        hasOrientedRef.current = true;
+        c.handleSelectSearchResult(initialFocusUserId);
+      } else if (initialFindPathTargetId) {
+        hasOrientedRef.current = true;
+        c.handleFindPath(initialFindPathTargetId);
+      } else {
+        hasOrientedRef.current = true;
+        const timer = setTimeout(() => {
+          c.handleLocateMe();
+        }, 150);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [initialFocusUserId, c.users.length]);
-
-  useEffect(() => {
-    if (initialFindPathTargetId && c.users.length > 0) {
-      c.handleFindPath(initialFindPathTargetId);
-    }
-  }, [initialFindPathTargetId, c.users.length]);
+  }, [c.graphData.nodes, initialFocusUserId, initialFindPathTargetId, c.handleSelectSearchResult, c.handleFindPath, c.handleLocateMe]);
 
   const graphResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [graphSize, setGraphSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -1027,24 +1032,30 @@ export const GraphContainer = ({
                 </button>
               </div>
 
-              {/* Logout button */}
+              {/* Instructions & Help */}
               <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px' }}>
-                <button
-                  onClick={onLogout}
+                <a
+                  href="/instructions"
+                  target="_blank"
+                  rel="noreferrer"
                   style={{
-                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    textAlign: 'center',
                     padding: '8px',
-                    background: '#3a1414',
-                    border: '1px solid #ff6b6b',
+                    background: '#2c2c2e',
+                    border: '1px solid #3a3a40',
                     borderRadius: '6px',
-                    color: '#ff6b6b',
+                    color: '#6ab0ff',
+                    textDecoration: 'none',
                     fontSize: '13px',
                     fontWeight: 500,
-                    cursor: 'pointer',
                   }}
                 >
-                  Log out
-                </button>
+                  📖 View Instructions & Guide
+                </a>
               </div>
             </div>
           )}
@@ -1165,6 +1176,7 @@ export const GraphContainer = ({
             isDisconnecting={c.isActionPending(c.selectedUser.id)}
             onSelectNode={(nodeId: string) => c.focusUser(nodeId)}
             isCurrentUser={c.selectedUser.id === currentUser.id}
+            onBioUpdated={(newBio) => c.handleBioUpdated(c.selectedUser!.id, newBio)}
             style={{ background: 'transparent', border: 'none' }}
           />
         </DraggableCard>
@@ -1234,8 +1246,9 @@ export const GraphContainer = ({
           <div
             style={{
               ...floatingPanelStyle,
-              padding: '12px 16px',
-              width: '220px',
+              boxSizing: 'border-box',
+              padding: '14px 16px',
+              width: '230px',
               marginBottom: '4px',
             }}
           >
@@ -1255,16 +1268,34 @@ export const GraphContainer = ({
                 const val = Number(e.target.value);
                 c.setMaxDistance(val === 7 ? Infinity : val);
               }}
-              style={{ width: '100%', cursor: 'pointer', accentColor: '#3d8bff' }}
+              style={{
+                width: '100%',
+                margin: '0',
+                padding: '0',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+                accentColor: '#3d8bff',
+                display: 'block',
+              }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#9a9a9a', marginTop: '4px' }}>
-              <span>1</span>
-              <span>2</span>
-              <span>3</span>
-              <span>4</span>
-              <span>5</span>
-              <span>6</span>
-              <span>All</span>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '0 8px',
+                fontSize: '10px',
+                color: '#9a9a9a',
+                marginTop: '6px',
+                boxSizing: 'border-box',
+              }}
+            >
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>1</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>2</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>3</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>4</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>5</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>6</span>
+              <span style={{ width: 0, display: 'flex', justifyContent: 'center', overflow: 'visible' }}>All</span>
             </div>
           </div>
         )}

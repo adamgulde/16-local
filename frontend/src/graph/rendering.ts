@@ -23,16 +23,14 @@ export const LABEL_VISIBILITY_SCALE = 0.6;
 // Node color reflects degree of separation from the current user, not raw connection count:
 // direct connections (degree 1) are green, fading toward white by degree 10 and beyond (or if
 // unreachable). The current user's own node is colored separately by each renderer.
-export const DEGREE_FADE_MAX = 10;
+export const DEGREE_FADE_MAX = 6;
 export const CURRENT_USER_COLOR = '#3d8bff';
+export const FIRST_DEGREE_COLOR = '#22c55e';
+export const OTHER_DEGREE_COLOR = '#9ca3af';
 
 export const colorForDistance = (distance: number | undefined): string => {
-  if (distance === undefined || distance < 1) return 'rgb(255, 255, 255)';
-  const t = Math.min(distance - 1, DEGREE_FADE_MAX - 1) / (DEGREE_FADE_MAX - 1);
-  const r = Math.round(0 + 255 * t);
-  const g = Math.round(170 + 85 * t);
-  const b = Math.round(0 + 255 * t);
-  return `rgb(${r}, ${g}, ${b})`;
+  if (distance === 1) return FIRST_DEGREE_COLOR;
+  return OTHER_DEGREE_COLOR;
 };
 
 // BFS distance from the current user, over confirmed connections only (pending requests don't
@@ -63,8 +61,8 @@ export const computeDistanceFromMe = (users: User[], currentUserId: string): Map
 // specific nodes are" would need a custom O(n²) force, giving up forceManyBody's Barnes-Hut
 // optimization (and the framerate work that fixed the zoomed-out lag), so this reuses the same
 // per-node distanceFromMe map that already drives node color instead.
-const CHARGE_BASE = -100;
-const CHARGE_DEGREE_STEP = 30;
+const CHARGE_BASE = -30;
+const CHARGE_DEGREE_STEP = 9;
 const LINK_DISTANCE = 20;
 
 /** Wires the charge/link forces to distanceFromMe — identical physics for every renderer. */

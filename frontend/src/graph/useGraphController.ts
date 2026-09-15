@@ -237,6 +237,21 @@ export const useGraphController = (
     loadData();
   }, [loadData]);
 
+  // Refreshes the graph when the user returns to the tab after a long inactive/background state
+  useEffect(() => {
+    const handleTabActive = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleTabActive);
+    window.addEventListener('focus', handleTabActive);
+    return () => {
+      document.removeEventListener('visibilitychange', handleTabActive);
+      window.removeEventListener('focus', handleTabActive);
+    };
+  }, [loadData]);
+
   // Polls for changes made by other users (a request they sent you, one they accepted, or new
   // users/connections added to the network).
   useEffect(() => {
@@ -541,6 +556,24 @@ export const useGraphController = (
     []
   );
 
+  const handleBioUpdated = useCallback(
+    (userId: string, newBio: string) => {
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, bio: newBio } : u)));
+      if (userId === currentUser.id) {
+        const stored = localStorage.getItem('authUser');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            localStorage.setItem('authUser', JSON.stringify({ ...parsed, bio: newBio }));
+          } catch {
+            // ignore
+          }
+        }
+      }
+    },
+    [currentUser.id]
+  );
+
   // Escape (or a mobile "back"/close affordance calling the same setter) closes whatever's
   // currently "open," most-transient first: the search dropdown, then the selected-user card,
   // then an open find-path result.
@@ -625,6 +658,7 @@ export const useGraphController = (
     handleDeclineRequest,
     handleDisconnect,
     handleUpdateAutoReject,
+    handleBioUpdated,
     pendingActionIds,
     isActionPending,
     isUpdatingAutoReject,

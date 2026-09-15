@@ -5,9 +5,10 @@ import { MobileGraphView } from './components/MobileGraphView';
 import { MillerColumnsView } from './components/columns/MillerColumnsView';
 import { Login } from './components/auth/Login';
 import { Register } from './components/auth/Register';
+import { Instructions } from './components/Instructions';
 import { NotFound } from './components/NotFound';
 import type { User } from './services/userService';
-import { loadSessionUser, clearSession } from './services/authService';
+import { loadSessionUser } from './services/authService';
 import { useIsMobile } from './hooks/useIsMobile';
 
 function App() {
@@ -19,11 +20,6 @@ function App() {
 
   const [graphFocusUserId, setGraphFocusUserId] = useState<string | null>(null);
   const [graphFindPathTargetId, setGraphFindPathTargetId] = useState<string | null>(null);
-
-  const handleLogout = () => {
-    clearSession();
-    setCurrentUser(null);
-  };
 
   const handleSwitchToColumns = () => {
     setViewPreference('columns');
@@ -39,21 +35,19 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className="app-container">
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <Routes>
           <Route path="/" element={
             currentUser ? (
               viewPreference === 'columns' ? (
                 <MillerColumnsView
                   currentUser={currentUser}
-                  onLogout={handleLogout}
                   onSwitchToGraph={handleSwitchToGraph}
                   isMobile={isMobile}
                 />
               ) : isMobile ? (
                 <MobileGraphView
                   currentUser={currentUser}
-                  onLogout={handleLogout}
                   onSwitchToColumns={handleSwitchToColumns}
                   initialFocusUserId={graphFocusUserId}
                   initialFindPathTargetId={graphFindPathTargetId}
@@ -61,7 +55,6 @@ function App() {
               ) : (
                 <GraphContainer
                   currentUser={currentUser}
-                  onLogout={handleLogout}
                   onSwitchToColumns={handleSwitchToColumns}
                   initialFocusUserId={graphFocusUserId}
                   initialFindPathTargetId={graphFindPathTargetId}
@@ -77,6 +70,7 @@ function App() {
           <Route path="/register" element={
             currentUser ? <Navigate to="/" replace /> : <Register onLogin={setCurrentUser} />
           } />
+          <Route path="/instructions" element={<Instructions />} />
           <Route path="*" element={<NotFound currentUser={currentUser} />} />
         </Routes>
       </div>

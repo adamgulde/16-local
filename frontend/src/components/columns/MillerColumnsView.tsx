@@ -17,7 +17,6 @@ import {
 
 interface MillerColumnsViewProps {
   currentUser: User;
-  onLogout: () => void;
   onSwitchToGraph: (focusUserId?: string, findPathTargetId?: string) => void;
   isMobile?: boolean;
 }
@@ -29,7 +28,6 @@ interface PathItem {
 
 export const MillerColumnsView = ({
   currentUser,
-  onLogout,
   onSwitchToGraph,
   isMobile = false,
 }: MillerColumnsViewProps) => {
@@ -217,6 +215,21 @@ export const MillerColumnsView = ({
         pendingActionIdsRef.current.delete(targetId);
         setPendingActionIds(new Set(pendingActionIdsRef.current));
       }, 300);
+    }
+  };
+
+  const handleBioUpdated = (newBio: string) => {
+    setInspectedUser((prev) => (prev ? { ...prev, bio: newBio } : prev));
+    if (inspectedUser?.id === currentUser.id) {
+      const stored = localStorage.getItem('authUser');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          localStorage.setItem('authUser', JSON.stringify({ ...parsed, bio: newBio }));
+        } catch {
+          // ignore
+        }
+      }
     }
   };
 
@@ -415,7 +428,7 @@ export const MillerColumnsView = ({
           )}
         </div>
 
-        {/* Right: User / Logout */}
+        {/* Right: User / Guide */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {!isMobile && (
             <button
@@ -435,22 +448,25 @@ export const MillerColumnsView = ({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onLogout}
+          <a
+            href="/instructions"
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
-              padding: '6px 12px',
-              background: 'rgba(255, 107, 107, 0.12)',
-              border: '1px solid rgba(255, 107, 107, 0.3)',
+              padding: '6px 10px',
+              background: '#2c2c2e',
+              border: '1px solid #3a3a40',
               borderRadius: '6px',
-              color: '#ff6b6b',
+              color: '#d0d0d0',
               fontSize: '12px',
-              fontWeight: 500,
+              textDecoration: 'none',
               cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
           >
-            Log out
-          </button>
+            {isMobile ? 'Guide' : 'Instructions'}
+          </a>
         </div>
       </header>
 
@@ -653,6 +669,7 @@ export const MillerColumnsView = ({
                 onSwitchToGraph(nodeId);
               }}
               isCurrentUser={inspectedUser.id === currentUser.id}
+              onBioUpdated={handleBioUpdated}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -703,6 +720,8 @@ export const MillerColumnsView = ({
                 onSwitchToGraph(nodeId);
               }}
               isCurrentUser={inspectedUser.id === currentUser.id}
+              onBioUpdated={handleBioUpdated}
+              compact={true}
               style={{
                 background: 'transparent',
                 border: 'none',

@@ -1,5 +1,6 @@
 package com.example.demo.model;
 
+import com.example.demo.security.EncryptedPhoneNumberConverter;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -18,6 +19,7 @@ public class Otp {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Convert(converter = EncryptedPhoneNumberConverter.class)
     @Column(nullable = false)
     private String phoneNumber;
 

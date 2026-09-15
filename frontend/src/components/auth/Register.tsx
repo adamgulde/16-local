@@ -34,43 +34,41 @@ export const Register = ({ onLogin }: RegisterProps) => {
   const submittingRef = useRef(false);
   const { cooldown, isCoolingDown, startCooldown } = useOtpCooldown(30);
 
-  // Validate invite code whenever it changes
-  useEffect(() => {
-    const trimmed = inviteCode.trim();
+  const validateCodeNow = async (codeToValidate: string): Promise<boolean> => {
+    const trimmed = codeToValidate.trim();
     if (!trimmed) {
       setInviterName(null);
       setInviteCodeError(null);
-      return;
+      return true;
     }
-
-    let isMounted = true;
-    const timer = setTimeout(async () => {
-      setIsValidatingCode(true);
-      try {
-        const result = await validateInviteCode(trimmed);
-        if (!isMounted) return;
-        if (result.valid) {
-          setInviterName(result.inviterName || 'Member');
-          setInviteCodeError(null);
-        } else {
-          setInviterName(null);
-          setInviteCodeError('Invite code not found');
-        }
-      } catch {
-        if (isMounted) {
-          setInviterName(null);
-          setInviteCodeError('Could not validate invite code');
-        }
-      } finally {
-        if (isMounted) setIsValidatingCode(false);
+    setIsValidatingCode(true);
+    try {
+      const result = await validateInviteCode(trimmed);
+      if (result.valid) {
+        setInviterName(result.inviterName || 'Member');
+        setInviteCodeError(null);
+        return true;
+      } else {
+        setInviterName(null);
+        setInviteCodeError('Invite code not found');
+        return false;
       }
-    }, 400);
+    } catch {
+      setInviterName(null);
+      setInviteCodeError('Could not validate invite code');
+      return false;
+    } finally {
+      setIsValidatingCode(false);
+    }
+  };
 
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [inviteCode]);
+  // Validate initial invite code from URL query params once on mount
+  useEffect(() => {
+    const initialCode = searchParams.get('code') || searchParams.get('invite');
+    if (initialCode) {
+      validateCodeNow(initialCode);
+    }
+  }, []);
 
   const handleInitiateSignUp = async () => {
     if (submittingRef.current) return;
@@ -83,9 +81,12 @@ export const Register = ({ onLogin }: RegisterProps) => {
       setError('Please enter a valid 10-digit phone number (+1 ___-___-____).');
       return;
     }
-    if (inviteCode.trim() && inviteCodeError) {
-      setError('Please provide a valid invite code or leave it blank.');
-      return;
+    if (inviteCode.trim()) {
+      const isValid = await validateCodeNow(inviteCode);
+      if (!isValid) {
+        setError('Please provide a valid invite code or leave it blank.');
+        return;
+      }
     }
 
     setError('');
@@ -229,7 +230,18 @@ export const Register = ({ onLogin }: RegisterProps) => {
                 type="text"
                 placeholder="e.g. INV123"
                 value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                onChange={(e) => {
+                  setInviteCode(e.target.value.toUpperCase());
+                  if (inviteCodeError || inviterName) {
+                    setInviteCodeError(null);
+                    setInviterName(null);
+                  }
+                }}
+                onBlur={() => {
+                  if (inviteCode.trim()) {
+                    validateCodeNow(inviteCode);
+                  }
+                }}
                 style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#fff', fontSize: '15px' }}
               />
               {isValidatingCode && <span style={{ fontSize: '12px', color: '#9a9a9a', marginTop: '4px', display: 'block' }}>Checking code...</span>}
