@@ -54,7 +54,7 @@ public class OtpService {
         String cleanCode = code.trim();
 
         // 1. Bypass for standard test code or test accounts
-        if ("000000".equals(cleanCode) || TwilioVerifyService.isTestPhoneNumber(phoneNumber)) {
+        if ("000000".equals(cleanCode) && TwilioVerifyService.isTestPhoneNumber(phoneNumber)) {
             return true;
         }
 
