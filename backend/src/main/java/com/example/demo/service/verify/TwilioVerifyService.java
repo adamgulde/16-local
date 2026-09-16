@@ -1,5 +1,6 @@
 package com.example.demo.service.verify;
 
+import com.example.demo.security.EncryptedPhoneNumberConverter;
 import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.verify.v2.service.Verification;
@@ -124,7 +125,7 @@ public class TwilioVerifyService {
             DevVerifyEntry entry = new DevVerifyEntry("000000", Instant.now().plusSeconds(900));
             devVerifyStore.put(e164, entry);
             devVerifyStore.put(phoneNumber.trim(), entry);
-            log.info("[TWILIO VERIFY TEST ACCOUNT] Default mock code 000000 registered for {}", e164);
+            log.info("[TWILIO VERIFY TEST ACCOUNT] Default mock code 000000 registered for {}", EncryptedPhoneNumberConverter.encrypt(e164));
             return true;
         }
 
@@ -132,14 +133,14 @@ public class TwilioVerifyService {
             try {
                 Verification verification = Verification.creator(verifyServiceSid, e164, "sms").create();
                 log.info("Twilio Verify SMS initiated for {} (sid: {}, status: {})",
-                        e164, verification.getSid(), verification.getStatus());
+                        EncryptedPhoneNumberConverter.encrypt(e164), verification.getSid(), verification.getStatus());
                 return true;
             } catch (ApiException e) {
                 log.warn("Twilio Verify API error sending verification to {}: {} (code: {}). Falling back to mock OTP.",
-                        e164, e.getMessage(), e.getCode());
+                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage(), e.getCode());
             } catch (Exception e) {
                 log.warn("Unexpected error initiating Twilio Verify for {}: {}. Falling back to mock OTP.",
-                        e164, e.getMessage());
+                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage());
             }
         }
 
@@ -149,7 +150,7 @@ public class TwilioVerifyService {
         devVerifyStore.put(e164, entry);
         devVerifyStore.put(phoneNumber.trim(), entry);
         log.info("==================================================================");
-        log.info("[TWILIO VERIFY MOCK OTP] Code generated for phone [{}]: {}", e164, mockCode);
+        log.info("[TWILIO VERIFY MOCK OTP] Code generated for phone [{}]: {}", EncryptedPhoneNumberConverter.encrypt(e164), mockCode);
         log.info("==================================================================");
         return true;
     }
@@ -177,16 +178,16 @@ public class TwilioVerifyService {
                         .setCode(cleanCode)
                         .create();
                 boolean approved = "approved".equalsIgnoreCase(check.getStatus());
-                log.info("Twilio Verify check for {}: status={}", e164, check.getStatus());
+                log.info("Twilio Verify check for {}: status={}", EncryptedPhoneNumberConverter.encrypt(e164), check.getStatus());
                 if (approved) {
                     return true;
                 }
             } catch (ApiException e) {
                 log.warn("Twilio Verify API check error for {}: {} (code: {}). Checking fallback store.",
-                        e164, e.getMessage(), e.getCode());
+                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage(), e.getCode());
             } catch (Exception e) {
                 log.warn("Unexpected error during Twilio Verify check for {}: {}. Checking fallback store.",
-                        e164, e.getMessage());
+                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage());
             }
         }
 

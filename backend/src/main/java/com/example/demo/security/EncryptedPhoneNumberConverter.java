@@ -26,6 +26,10 @@ import java.util.Base64;
 @Component
 public class EncryptedPhoneNumberConverter implements AttributeConverter<String, String> {
 
+    public static String encrypt(String plaintext) {
+        return new EncryptedPhoneNumberConverter().convertToDatabaseColumn(plaintext);
+    }
+
     private static final String PREFIX = "enc:";
     private static final String DEFAULT_SECRET = "connectionsbetween-us-default-secret-key-2026!";
     private static volatile byte[] cachedAesKey;

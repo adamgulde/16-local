@@ -1,5 +1,6 @@
 package com.example.demo.controller;
 
+import com.example.demo.security.EncryptedPhoneNumberConverter;
 import com.example.demo.dto.*;
 import com.example.demo.exception.BadRequestException;
 import com.example.demo.model.User;
@@ -43,7 +44,7 @@ public class AuthController {
             throw new BadRequestException("No account found with this phone number. Please sign up.");
         }
         otpService.sendOtp(phone);
-        log.info("Sent sign-in OTP to {}", phone);
+        log.info("Sent sign-in OTP to {}", EncryptedPhoneNumberConverter.encrypt(phone));
         return ResponseEntity.ok().build();
     }
 
@@ -85,7 +86,7 @@ public class AuthController {
         }
 
         otpService.sendOtp(phone);
-        log.info("Sent sign-up OTP to {}", phone);
+        log.info("Sent sign-up OTP to {}", EncryptedPhoneNumberConverter.encrypt(phone));
         return ResponseEntity.ok().build();
     }
 
@@ -102,7 +103,7 @@ public class AuthController {
         if (!otpService.verifySignUpOtp(phone, code)) {
             throw new BadRequestException("Invalid or expired verification code");
         }
-        log.info("Sign-up OTP verified for phone {}", phone);
+        log.info("Sign-up OTP verified for phone {}", EncryptedPhoneNumberConverter.encrypt(phone));
         return ResponseEntity.ok().build();
     }
 

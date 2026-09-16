@@ -1,5 +1,6 @@
 package com.example.demo.service.sms;
 
+import com.example.demo.security.EncryptedPhoneNumberConverter;
 import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.api.v2010.account.Message;
@@ -99,16 +100,16 @@ public class TwilioSmsService implements SmsService {
                             message
                     ).create();
                 }
-                log.info("Twilio SMS successfully sent to {}", to);
+                log.info("Twilio SMS successfully sent to {}", EncryptedPhoneNumberConverter.encrypt(to));
                 return;
             } catch (ApiException e) {
                 log.warn("Twilio API error sending SMS to {}: {} (code: {}). Falling back to console log.",
-                        phoneNumber, e.getMessage(), e.getCode());
+                        EncryptedPhoneNumberConverter.encrypt(phoneNumber), e.getMessage(), e.getCode());
             } catch (Exception e) {
                 log.warn("Unexpected error sending Twilio SMS to {}: {}. Falling back to console log.",
-                        phoneNumber, e.getMessage());
+                        EncryptedPhoneNumberConverter.encrypt(phoneNumber), e.getMessage());
             }
         }
-        log.info("[MOCK SMS] To: {} | {}", phoneNumber, message);
+        log.info("[MOCK SMS] To: {} | {}", EncryptedPhoneNumberConverter.encrypt(phoneNumber), message);
     }
 }
