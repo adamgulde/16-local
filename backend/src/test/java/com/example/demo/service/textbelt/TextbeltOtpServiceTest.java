@@ -90,6 +90,18 @@ class TextbeltOtpServiceTest {
     }
 
     @Test
+    void sendOtp_whenDisabled_generatesMockWithoutCallingHttpClient() {
+        service.setEnabled(false);
+        TextbeltOtpService.TextbeltSendResult result = service.sendOtp("5551234567", "user123");
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.otp()).isNotNull();
+        assertThat(result.textId()).isEqualTo("mock-text-id");
+
+        verifyNoInteractions(httpClient);
+    }
+
+    @Test
     void sendOtp_networkTimeout_throwsSanitizedException() throws Exception {
         when(httpClient.send(any(HttpRequest.class), any()))
                 .thenThrow(new HttpTimeoutException("Connection timed out"));

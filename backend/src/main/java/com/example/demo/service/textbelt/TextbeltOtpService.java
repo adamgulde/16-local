@@ -120,8 +120,8 @@ public class TextbeltOtpService {
             resolvedMessage = "Your verification code is $OTP. Valid for 3 minutes.";
         }
 
-        // Local testing or example key: generate mock OTP without making external network calls
-        if (!enabled || "example_otp_key".equalsIgnoreCase(apiKey)) {
+        // Local testing: when disabled, generate mock OTP without making external network calls
+        if (!enabled) {
             String devCode = generateDevCode(resolvedLength);
             devOtpStore.put(resolvedUserId.toLowerCase(), new DevOtpEntry(devCode, Instant.now().plusSeconds(resolvedLifetime)));
             String formattedUserKey = formatPhone(resolvedUserId);
