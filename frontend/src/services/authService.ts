@@ -27,7 +27,7 @@ export const initiateSignInOtp = async (phoneNumber: string): Promise<void> => {
 };
 
 export const verifySignInOtp = async (phoneNumber: string, code: string): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>('/api/auth/signin/verify-otp', { phoneNumber, code });
+  const response = await apiClient.post<AuthResponse>('/api/auth/verify-otp', { phoneNumber, code });
   return response.data;
 };
 
@@ -53,7 +53,7 @@ export const validateInviteCode = async (code: string): Promise<InviteCodeValida
 export const initiateOtp = initiateSignInOtp;
 export const verifyOtp = verifySignInOtp;
 
-// Standalone Textbelt OTP API
+// Standalone Twilio Verify OTP API
 export interface OtpActionResponse {
   success: boolean;
   message: string;

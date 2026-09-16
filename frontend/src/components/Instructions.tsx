@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+
 import type { User } from '../services/userService';
-import { loadSessionUser } from '../services/authService';
 
 interface InstructionsProps {
   onClose?: () => void;
@@ -9,7 +9,7 @@ interface InstructionsProps {
   currentUser?: User | null;
 }
 
-export const Instructions = ({ onClose, isModal = false, currentUser }: InstructionsProps) => {
+export const Instructions = ({ onClose, isModal = false, currentUser = null }: InstructionsProps) => {
   const navigate = useNavigate();
   const effectiveUser = currentUser !== undefined ? currentUser : loadSessionUser();
 
@@ -163,72 +163,26 @@ export const Instructions = ({ onClose, isModal = false, currentUser }: Instruct
           </p>
         </div>
 
-        {/* Bottom "Let's Go!" CTA */}
-        <div
-          style={{
-            marginTop: '28px',
-            paddingTop: '24px',
-            borderTop: '1px solid #3a3a40',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              if (onClose) {
-                onClose();
-              } else if (effectiveUser) {
-                navigate('/');
-              } else {
-                navigate('/login');
-              }
-            }}
-            style={{
-              width: '100%',
-              maxWidth: '280px',
-              padding: '14px 28px',
-              background: '#2a5f9e',
-              border: '1px solid #3d8bff',
-              borderRadius: '8px',
-              color: '#ffffff',
-              fontSize: '16px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 16px rgba(42, 95, 158, 0.4)',
-              transition: 'background 0.2s, transform 0.1s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#3474be';
-              e.currentTarget.style.transform = 'translateY(-1px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#2a5f9e';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            Let's Go!
-          </button>
-
-          {!effectiveUser && (
-            <div style={{ fontSize: '13px', color: '#9a9a9a', display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span>New here or returning?</span>
-              <Link to="/login" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
-                Sign In
-              </Link>
-              <span style={{ color: '#6a6a70' }}>·</span>
-              <Link to="/register" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
-                Sign Up
-              </Link>
-            </div>
-          )}
-        </div>
+        {!isModal && !currentUser && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
+            <button
+              onClick={() => navigate('/login')}
+              style={{
+                background: '#3d8bff',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 32px',
+                fontSize: '16px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(61, 139, 255, 0.3)',
+              }}
+            >
+              Let's Go!
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
