@@ -36,6 +36,7 @@ class OtpServiceTest {
 
     @Test
     void sendOtp_forRealUser_generatesCodeAndDispatchesToTextbeltService() {
+        otpService.setTextbeltEnabled(true);
         String phone = "+12025550199";
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
         when(textbeltOtpService.sendOtp(phone, phone))
@@ -50,6 +51,23 @@ class OtpServiceTest {
         assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
 
         verify(textbeltOtpService).sendOtp(eq(phone), eq(phone));
+    }
+
+    @Test
+    void sendOtp_whenTextbeltDisabled_generatesLocalCodeAndDoesNotCallTextbelt() {
+        otpService.setTextbeltEnabled(false);
+        String phone = "+12025550199";
+        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
+
+        otpService.sendOtp(phone);
+
+        ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
+        verify(otpRepository).save(captor.capture());
+        String savedCode = captor.getValue().getCode();
+        assertThat(savedCode).matches("^\\d{6}$");
+        assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
+
+        verifyNoInteractions(textbeltOtpService);
     }
 
     @Test

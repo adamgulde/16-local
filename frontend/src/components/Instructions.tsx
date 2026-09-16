@@ -1,19 +1,29 @@
 import type { CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import type { User } from '../services/userService';
+import { loadSessionUser } from '../services/authService';
 
 interface InstructionsProps {
   onClose?: () => void;
   isModal?: boolean;
+  currentUser?: User | null;
 }
 
-export const Instructions = ({ onClose, isModal = false }: InstructionsProps) => {
+export const Instructions = ({ onClose, isModal = false, currentUser }: InstructionsProps) => {
   const navigate = useNavigate();
+  const effectiveUser = currentUser !== undefined ? currentUser : loadSessionUser();
 
   const handleBack = () => {
     if (onClose) {
       onClose();
+    } else if (effectiveUser) {
+      if (window.history.length > 1) {
+        navigate(-1);
+      } else {
+        navigate('/');
+      }
     } else {
-      navigate(-1);
+      navigate('/login');
     }
   };
 
@@ -25,13 +35,16 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
         padding: '8px 4px',
       }
     : {
-        minHeight: '100vh',
+        height: '100%',
+        maxHeight: '100vh',
+        overflowY: 'auto',
         background: '#121214',
         color: '#f0f0f0',
         padding: '32px 20px',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
+        boxSizing: 'border-box',
       };
 
   const contentBoxStyle: CSSProperties = isModal
@@ -44,6 +57,7 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
         borderRadius: '16px',
         padding: '32px',
         boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+        marginBottom: '40px',
       };
 
   const cardStyle: CSSProperties = {
@@ -69,10 +83,10 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: isModal ? '20px' : '26px', fontWeight: 700, color: '#f0f0f0' }}>
-              How ConnectionsBetween.US Works
+              How ConnectionsBetween.Us Works
             </h1>
             <p style={{ margin: '4px 0 0', color: '#9a9a9a', fontSize: '14px' }}>
-              Mapping real human connections, mutual friends, and separation degrees.
+              Mapping real human connections.
             </p>
           </div>
           <button
@@ -88,7 +102,7 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
               fontWeight: 500,
             }}
           >
-            {isModal ? 'Close' : '← Back'}
+            {isModal ? 'Close' : effectiveUser ? '← Back' : 'Sign In'}
           </button>
         </div>
 
@@ -105,7 +119,7 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
             </li>
             <li>
               <span style={badgeStyle('#22c55e')} />
-              <strong style={{ color: '#4ade80' }}>Green:</strong> 1st Degree Connections — direct mutual relationships you have confirmed.
+              <strong style={{ color: '#4ade80' }}>Green:</strong> 1st Degree Connections — direct mutual relationships you have confirmed. Remember, your first degree connections are the only ones that can see your phone number!
             </li>
             <li>
               <span style={badgeStyle('#9ca3af')} />
@@ -147,6 +161,73 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
           <p style={{ margin: 0, fontSize: '13px', color: '#c5c5c7', lineHeight: 1.5 }}>
             Prefer a structured hierarchy? Click the <strong>Columns</strong> toggle in the top bar to switch into a macOS Finder-style Miller columns view, where you can navigate connection chains column by column.
           </p>
+        </div>
+
+        {/* Bottom "Let's Go!" CTA */}
+        <div
+          style={{
+            marginTop: '28px',
+            paddingTop: '24px',
+            borderTop: '1px solid #3a3a40',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (onClose) {
+                onClose();
+              } else if (effectiveUser) {
+                navigate('/');
+              } else {
+                navigate('/login');
+              }
+            }}
+            style={{
+              width: '100%',
+              maxWidth: '280px',
+              padding: '14px 28px',
+              background: '#2a5f9e',
+              border: '1px solid #3d8bff',
+              borderRadius: '8px',
+              color: '#ffffff',
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 16px rgba(42, 95, 158, 0.4)',
+              transition: 'background 0.2s, transform 0.1s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#3474be';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#2a5f9e';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            Let's Go!
+          </button>
+
+          {!effectiveUser && (
+            <div style={{ fontSize: '13px', color: '#9a9a9a', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span>New here or returning?</span>
+              <Link to="/login" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+                Sign In
+              </Link>
+              <span style={{ color: '#6a6a70' }}>·</span>
+              <Link to="/register" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+                Sign Up
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

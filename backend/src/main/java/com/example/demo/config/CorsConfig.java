@@ -5,7 +5,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
@@ -15,15 +17,33 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        String[] origins = Arrays.stream(allowedOrigins.split(","))
+        List<String> rawOrigins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
-                .toArray(String[]::new);
+                .toList();
+
+        List<String> patterns = new ArrayList<>(rawOrigins);
+        List<String> devPatterns = List.of(
+                "http://localhost",
+                "http://localhost:*",
+                "https://localhost",
+                "https://localhost:*",
+                "http://127.0.0.1",
+                "http://127.0.0.1:*",
+                "https://127.0.0.1",
+                "https://127.0.0.1:*"
+        );
+        for (String devPattern : devPatterns) {
+            if (!patterns.contains(devPattern)) {
+                patterns.add(devPattern);
+            }
+        }
 
         registry.addMapping("/**")
-                .allowedOrigins(origins)
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .allowedOriginPatterns(patterns.toArray(String[]::new))
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
                 .allowedHeaders("*")
+                .exposedHeaders("Authorization", "Content-Disposition")
                 .allowCredentials(true)
                 .maxAge(3600);
     }

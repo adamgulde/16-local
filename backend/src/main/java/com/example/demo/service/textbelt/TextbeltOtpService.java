@@ -50,6 +50,11 @@ public class TextbeltOtpService {
 
     @Getter
     @Setter
+    @Value("${textbelt.enabled:false}")
+    private boolean enabled = false;
+
+    @Getter
+    @Setter
     @Value("${textbelt.otp-message:Your verification code is $OTP. Valid for 3 minutes.}")
     private String defaultMessage = "Your verification code is $OTP. Valid for 3 minutes.";
 
@@ -113,6 +118,20 @@ public class TextbeltOtpService {
         String resolvedMessage = (customMessage != null && !customMessage.isBlank()) ? customMessage : defaultMessage;
         if (resolvedMessage == null || !resolvedMessage.contains("$OTP")) {
             resolvedMessage = "Your verification code is $OTP. Valid for 3 minutes.";
+        }
+
+        // Local testing or example key: generate mock OTP without making external network calls
+        if (!enabled || "example_otp_key".equalsIgnoreCase(apiKey)) {
+            String devCode = generateDevCode(resolvedLength);
+            devOtpStore.put(resolvedUserId.toLowerCase(), new DevOtpEntry(devCode, Instant.now().plusSeconds(resolvedLifetime)));
+            String formattedUserKey = formatPhone(resolvedUserId);
+            if (formattedUserKey != null) {
+                devOtpStore.put(formattedUserKey.toLowerCase(), new DevOtpEntry(devCode, Instant.now().plusSeconds(resolvedLifetime)));
+            }
+            log.info("==================================================================");
+            log.info("[TEXTBELT LOCAL/DEV MOCK OTP] Code generated for user [{}]: {}", resolvedUserId, devCode);
+            log.info("==================================================================");
+            return new TextbeltSendResult(true, "mock-text-id", 0, null, devCode);
         }
 
         Map<String, Object> requestPayload = new HashMap<>();
@@ -244,23 +263,24 @@ public class TextbeltOtpService {
         if (trimmed.isEmpty()) return null;
 
         String digits = trimmed.replaceAll("\\D", "");
+        if (digits.isEmpty()) return null;
 
-        // US 11-digit with country code 1 -> return 10-digit US format
+        // US 11-digit with leading country code 1: format to E.164 -> +1<10 digits>
         if (digits.length() == 11 && digits.startsWith("1")) {
-            return digits.substring(1);
+            return "+" + digits;
         }
 
-        // US standard 10-digit format
+        // US standard 10-digit format: format to E.164 -> +1<10 digits>
         if (digits.length() == 10) {
-            return digits;
+            return "+1" + digits;
         }
 
-        // International E.164 format
+        // International format with leading +
         if (trimmed.startsWith("+")) {
             return "+" + digits;
         }
 
-        return digits;
+        return "+" + digits;
     }
 
     public String normalizeUserId(String userId) {

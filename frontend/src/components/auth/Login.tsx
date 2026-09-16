@@ -198,6 +198,12 @@ export const Login = ({ onLogin }: LoginProps) => {
             Sign Up
           </Link>
         </div>
+
+        <div style={{ textAlign: 'center', fontSize: '13px', color: '#9a9a9a' }}>
+          <Link to="/" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+            ← View Instructions
+          </Link>
+        </div>
       </div>
     </div>
   );

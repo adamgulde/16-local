@@ -40,6 +40,7 @@ class TextbeltOtpServiceTest {
         rateLimiter.setWindowSeconds(600);
         service = new TextbeltOtpService(rateLimiter, new ObjectMapper(), httpClient);
         service.setApiKey("test_api_key");
+        service.setEnabled(true);
         service.init();
     }
 
@@ -159,16 +160,16 @@ class TextbeltOtpServiceTest {
 
     @Test
     void formatPhone_formatsUsAndInternationalNumbers() {
-        assertThat(service.formatPhone("+1 (555) 123-4567")).isEqualTo("5551234567");
-        assertThat(service.formatPhone("+15551234567")).isEqualTo("5551234567");
-        assertThat(service.formatPhone("555-123-4567")).isEqualTo("5551234567");
+        assertThat(service.formatPhone("+1 (555) 123-4567")).isEqualTo("+15551234567");
+        assertThat(service.formatPhone("+15551234567")).isEqualTo("+15551234567");
+        assertThat(service.formatPhone("555-123-4567")).isEqualTo("+15551234567");
         assertThat(service.formatPhone("+44 7712 345678")).isEqualTo("+447712345678");
     }
 
     @Test
     void normalizeUserId_normalizesPhoneNumbersPreservingUsernames() {
-        assertThat(service.normalizeUserId("+1 (555) 123-4567")).isEqualTo("5551234567");
-        assertThat(service.normalizeUserId("555-123-4567")).isEqualTo("5551234567");
+        assertThat(service.normalizeUserId("+1 (555) 123-4567")).isEqualTo("+15551234567");
+        assertThat(service.normalizeUserId("555-123-4567")).isEqualTo("+15551234567");
         assertThat(service.normalizeUserId("user@example.com")).isEqualTo("user@example.com");
         assertThat(service.normalizeUserId("c8d7e6f5-1234-5678-9abc-def012345678")).isEqualTo("c8d7e6f5-1234-5678-9abc-def012345678");
         assertThat(service.normalizeUserId("user_alpha")).isEqualTo("user_alpha");
