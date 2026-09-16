@@ -30,6 +30,7 @@ public class OtpService {
     @Value("${textbelt.enabled:false}")
     private boolean textbeltEnabled = false;
 
+    @Autowired
     public OtpService(OtpRepository otpRepository,
                       TextbeltOtpService textbeltOtpService,
                       @Autowired(required = false) SmsService smsService) {
