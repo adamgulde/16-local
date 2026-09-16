@@ -28,8 +28,6 @@ public class AuthTokenService {
 
     @Transactional
     public String issueToken(User user) {
-        authTokenRepository.deleteByUser(user);
-
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);

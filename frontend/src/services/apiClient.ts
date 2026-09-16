@@ -25,7 +25,8 @@ apiClient.interceptors.response.use(
   (error) => {
     if (axios.isAxiosError(error)) {
       const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
-      if (error.response?.status === 401 && !isAuthEndpoint) {
+      const status = error.response?.status;
+      if ((status === 401 || status === 403) && !isAuthEndpoint) {
         localStorage.removeItem('authToken');
         localStorage.removeItem('authUser');
         window.location.reload();

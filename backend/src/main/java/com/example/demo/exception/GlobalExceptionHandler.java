@@ -33,7 +33,27 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        if (isClientDisconnect(ex)) {
+            log.debug("Client aborted or disconnected before response completed: {}", ex.getMessage());
+            return null;
+        }
         log.error("Unhandled exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Internal server error"));
+    }
+
+    private boolean isClientDisconnect(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage();
+            if (className.contains("ClientAbortException") || className.contains("AsyncRequestNotUsableException")) {
+                return true;
+            }
+            if (message != null && (message.contains("Broken pipe") || message.contains("Connection reset by peer"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

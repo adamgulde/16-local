@@ -104,12 +104,16 @@ jobs:
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS || 'http://localhost,http://localhost:80' }}
           CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
           CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
+          TEXTBELT_API_KEY: ${{ secrets.TEXTBELT_API_KEY }}
+          TEXTBELT_OTP_LIFETIME: ${{ secrets.TEXTBELT_OTP_LIFETIME || '180' }}
+          TEXTBELT_OTP_LENGTH: ${{ secrets.TEXTBELT_OTP_LENGTH || '6' }}
+          TEXTBELT_OTP_MESSAGE: ${{ secrets.TEXTBELT_OTP_MESSAGE || 'Your verification code is $OTP. Valid for 3 minutes.' }}
         with:
           host: ${{ secrets.SSH_HOST_PROD || secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER_PROD || secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY_PROD || secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT_PROD || secrets.SSH_PORT || 22 }}
-          envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,TWILIO_MESSAGING_SERVICE_SID,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY
+          envs: SPRING_DATASOURCE_URL,SPRING_DATASOURCE_USERNAME,SPRING_DATASOURCE_PASSWORD,TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,TWILIO_PHONE_NUMBER,TWILIO_MESSAGING_SERVICE_SID,CORS_ALLOWED_ORIGINS,CLOUDFLARE_ORIGIN_CERT,CLOUDFLARE_ORIGIN_KEY,TEXTBELT_API_KEY,TEXTBELT_OTP_LIFETIME,TEXTBELT_OTP_LENGTH,TEXTBELT_OTP_MESSAGE
           script: |
             set -e
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH_PROD || secrets.DEPLOY_PATH || '/opt/app' }}"
@@ -153,7 +157,7 @@ jobs:
               chmod 600 certs/origin.key
             fi
 
-            # Update .env with Supabase database and Twilio secrets
+            # Update .env with Supabase database, Twilio, and Textbelt secrets
             cat << EOF > .env
             SPRING_DATASOURCE_URL=$SPRING_DATASOURCE_URL
             SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME
@@ -163,6 +167,10 @@ jobs:
             TWILIO_PHONE_NUMBER=$TWILIO_PHONE_NUMBER
             TWILIO_MESSAGING_SERVICE_SID=$TWILIO_MESSAGING_SERVICE_SID
             CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
+            TEXTBELT_API_KEY=$TEXTBELT_API_KEY
+            TEXTBELT_OTP_LIFETIME=$TEXTBELT_OTP_LIFETIME
+            TEXTBELT_OTP_LENGTH=$TEXTBELT_OTP_LENGTH
+            TEXTBELT_OTP_MESSAGE=$TEXTBELT_OTP_MESSAGE
             EOF
 
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull || true
