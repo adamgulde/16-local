@@ -5,7 +5,7 @@ import com.example.demo.dto.OtpSendRequest;
 import com.example.demo.dto.OtpVerifyRequest;
 import com.example.demo.dto.OtpVerifyResponse;
 import com.example.demo.exception.BadRequestException;
-import com.example.demo.service.textbelt.TextbeltOtpService;
+import com.example.demo.service.verify.TwilioVerifyService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OtpController {
 
-    private final TextbeltOtpService textbeltOtpService;
+    private final TwilioVerifyService twilioVerifyService;
 
     @PostMapping("/send")
     public ResponseEntity<OtpActionResponse> sendOtp(
@@ -33,12 +33,10 @@ public class OtpController {
             throw new BadRequestException("Phone number is required");
         }
 
-        String clientIp = extractClientIp(servletRequest);
-        String resolvedUserId = (request.userId() != null && !request.userId().isBlank())
-                ? request.userId().trim()
-                : (currentUserId != null ? currentUserId.toString() : request.phone().trim());
-
-        textbeltOtpService.sendOtp(request.phone(), resolvedUserId, null, null, null, clientIp);
+        boolean sent = twilioVerifyService.sendVerification(request.phone());
+        if (!sent) {
+            throw new BadRequestException("Failed to send verification code. Please try again.");
+        }
         return ResponseEntity.ok(new OtpActionResponse(true, "Verification code sent."));
     }
 
@@ -51,30 +49,19 @@ public class OtpController {
             throw new BadRequestException("Verification code is required");
         }
 
-        String resolvedUserId = (request.userId() != null && !request.userId().isBlank())
-                ? request.userId().trim()
-                : (request.phone() != null && !request.phone().isBlank()
-                    ? request.phone().trim()
-                    : (currentUserId != null ? currentUserId.toString() : null));
+        String phone = (request.phone() != null && !request.phone().isBlank())
+                ? request.phone().trim()
+                : (request.userId() != null && !request.userId().isBlank() ? request.userId().trim() : null);
 
-        if (resolvedUserId == null || resolvedUserId.isBlank()) {
-            throw new BadRequestException("User or phone identifier is required for verification");
+        if (phone == null || phone.isBlank()) {
+            throw new BadRequestException("Phone number is required for verification");
         }
 
-        boolean verified = textbeltOtpService.verifyOtp(resolvedUserId, request.otp());
+        boolean verified = twilioVerifyService.checkVerification(phone, request.otp().trim());
         if (verified) {
             return ResponseEntity.ok(new OtpVerifyResponse(true, true, "Phone number successfully verified."));
         } else {
             return ResponseEntity.ok(new OtpVerifyResponse(false, false, "Invalid or expired code."));
         }
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            String[] parts = forwarded.split(",");
-            return parts[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 }

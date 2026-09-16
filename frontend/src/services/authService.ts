@@ -23,20 +23,20 @@ const TOKEN_KEY = 'authToken';
 const USER_KEY = 'authUser';
 
 export const initiateSignInOtp = async (phoneNumber: string): Promise<void> => {
-  await apiClient.post('/api/auth/signin/initiate-otp', { phoneNumber });
+  await apiClient.post('/api/auth/send-otp-supabase', { phoneNumber });
 };
 
 export const verifySignInOtp = async (phoneNumber: string, code: string): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>('/api/auth/signin/verify-otp', { phoneNumber, code });
+  const response = await apiClient.post<AuthResponse>('/api/auth/verify-otp-supabase', { phoneNumber, code });
   return response.data;
 };
 
 export const initiateSignUpOtp = async (phoneNumber: string, inviteCode?: string): Promise<void> => {
-  await apiClient.post('/api/auth/signup/initiate-otp', { phoneNumber, inviteCode: inviteCode || null });
+  await apiClient.post('/api/auth/signup/send-otp-supabase', { phoneNumber, inviteCode: inviteCode || null });
 };
 
 export const verifySignUpOtp = async (phoneNumber: string, code: string): Promise<void> => {
-  await apiClient.post('/api/auth/signup/verify-otp', { phoneNumber, code });
+  await apiClient.post('/api/auth/signup/verify-otp-supabase', { phoneNumber, code });
 };
 
 export const register = async (payload: SignUpPayload): Promise<AuthResponse> => {
@@ -53,7 +53,7 @@ export const validateInviteCode = async (code: string): Promise<InviteCodeValida
 export const initiateOtp = initiateSignInOtp;
 export const verifyOtp = verifySignInOtp;
 
-// Standalone Textbelt OTP API
+// Standalone Twilio Verify OTP API
 export interface OtpActionResponse {
   success: boolean;
   message: string;

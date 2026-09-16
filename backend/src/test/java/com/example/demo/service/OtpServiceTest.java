@@ -2,8 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.model.Otp;
 import com.example.demo.repository.OtpRepository;
-import com.example.demo.service.textbelt.TextbeltOtpService;
-import com.example.demo.service.textbelt.TextbeltOtpService.TextbeltSendResult;
+import com.example.demo.service.verify.TwilioVerifyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,21 +24,21 @@ class OtpServiceTest {
     private OtpRepository otpRepository;
 
     @Mock
-    private TextbeltOtpService textbeltOtpService;
+    private TwilioVerifyService twilioVerifyService;
 
     private OtpService otpService;
 
     @BeforeEach
     void setUp() {
-        otpService = new OtpService(otpRepository, textbeltOtpService);
+        otpService = new OtpService(otpRepository, twilioVerifyService);
     }
 
     @Test
-    void sendOtp_forRealUser_generatesCodeAndDispatchesToTextbeltService() {
+    void sendOtp_forRealUser_dispatchesToTwilioVerifyServiceAndSavesOtp() {
         String phone = "+12025550199";
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
-        when(textbeltOtpService.sendOtp(phone, phone))
-                .thenReturn(new TextbeltSendResult(true, "txt-123", 50, null, "654321"));
+        when(twilioVerifyService.sendVerification(phone)).thenReturn(true);
+        when(twilioVerifyService.getLatestMockCode(phone)).thenReturn("654321");
 
         otpService.sendOtp(phone);
 
@@ -49,7 +48,21 @@ class OtpServiceTest {
         assertThat(savedCode).isEqualTo("654321");
         assertThat(captor.getValue().getExpiresAt()).isAfter(LocalDateTime.now());
 
-        verify(textbeltOtpService).sendOtp(eq(phone), eq(phone));
+        verify(twilioVerifyService).sendVerification(eq(phone));
+    }
+
+    @Test
+    void sendOtp_testAccount_setsDefault000000Code() {
+        String phone = "+1 555-000-1234";
+        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
+        when(twilioVerifyService.sendVerification(phone)).thenReturn(true);
+        when(twilioVerifyService.getLatestMockCode(phone)).thenReturn("000000");
+
+        otpService.sendOtp(phone);
+
+        ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
+        verify(otpRepository).save(captor.capture());
+        assertThat(captor.getValue().getCode()).isEqualTo("000000");
     }
 
     @Test
@@ -60,9 +73,22 @@ class OtpServiceTest {
     }
 
     @Test
-    void verifyOtp_whenCodeMatchesAndNotExpired_returnsTrue() {
+    void verifyOtp_whenCodeMatchesViaTwilioVerify_returnsTrue() {
         String phone = "+12025550199";
         String code = "654321";
+
+        when(twilioVerifyService.checkVerification(phone, code)).thenReturn(true);
+
+        assertThat(otpService.verifyOtp(phone, code)).isTrue();
+        verify(twilioVerifyService).checkVerification(phone, code);
+    }
+
+    @Test
+    void verifyOtp_whenTwilioReturnsFalse_fallsBackToRepositoryAndReturnsTrue() {
+        String phone = "+12025550199";
+        String code = "654321";
+
+        when(twilioVerifyService.checkVerification(phone, code)).thenReturn(false);
 
         Otp localOtp = Otp.builder()
                 .phoneNumber(phone)
@@ -77,6 +103,8 @@ class OtpServiceTest {
     @Test
     void verifyOtp_whenCodeDoesNotMatch_returnsFalse() {
         String phone = "+12025550199";
+        when(twilioVerifyService.checkVerification(phone, "111111")).thenReturn(false);
+
         Otp localOtp = Otp.builder()
                 .phoneNumber(phone)
                 .code("654321")
@@ -92,6 +120,8 @@ class OtpServiceTest {
         String phone = "+12025550199";
         String code = "654321";
 
+        when(twilioVerifyService.checkVerification(phone, code)).thenReturn(false);
+
         Otp expiredOtp = Otp.builder()
                 .phoneNumber(phone)
                 .code(code)
@@ -105,6 +135,7 @@ class OtpServiceTest {
     @Test
     void verifyOtp_whenOtpNotFoundInRepository_returnsFalse() {
         String phone = "+12025550199";
+        when(twilioVerifyService.checkVerification(phone, "123456")).thenReturn(false);
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
 
         assertThat(otpService.verifyOtp(phone, "123456")).isFalse();
@@ -114,12 +145,9 @@ class OtpServiceTest {
     void verifySignUpOtp_whenValid_marksOtpAsVerified() {
         String phone = "+12025550199";
         String code = "123456";
-        Otp localOtp = Otp.builder()
-                .phoneNumber(phone)
-                .code(code)
-                .expiresAt(LocalDateTime.now().plusMinutes(10))
-                .build();
-        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.of(localOtp));
+
+        when(twilioVerifyService.checkVerification(phone, code)).thenReturn(true);
+        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
 
         boolean result = otpService.verifySignUpOtp(phone, code);
         assertThat(result).isTrue();
@@ -133,6 +161,7 @@ class OtpServiceTest {
     @Test
     void verifySignUpOtp_whenInvalid_returnsFalse() {
         String phone = "+12025550199";
+        when(twilioVerifyService.checkVerification(phone, "999999")).thenReturn(false);
         when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
 
         boolean result = otpService.verifySignUpOtp(phone, "999999");

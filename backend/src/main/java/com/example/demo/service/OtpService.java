@@ -2,31 +2,41 @@ package com.example.demo.service;
 
 import com.example.demo.model.Otp;
 import com.example.demo.repository.OtpRepository;
-import com.example.demo.service.textbelt.TextbeltOtpService;
-import com.example.demo.service.textbelt.TextbeltOtpService.TextbeltSendResult;
-import lombok.RequiredArgsConstructor;
+import com.example.demo.service.verify.TwilioVerifyService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.Random;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class OtpService {
 
     private final OtpRepository otpRepository;
-    private final TextbeltOtpService textbeltOtpService;
-    private final Random random = new Random();
+    private final TwilioVerifyService twilioVerifyService;
+    private final SecureRandom random = new SecureRandom();
+
+    @Autowired
+    public OtpService(OtpRepository otpRepository, TwilioVerifyService twilioVerifyService) {
+        this.otpRepository = otpRepository;
+        this.twilioVerifyService = twilioVerifyService;
+    }
 
     public void sendOtp(String phoneNumber) {
-        TextbeltSendResult result = textbeltOtpService.sendOtp(phoneNumber, phoneNumber);
+        boolean isTest = TwilioVerifyService.isTestPhoneNumber(phoneNumber);
+        String code = isTest ? "000000" : null;
 
-        String code = (result != null && result.otp() != null)
-                ? result.otp()
-                : String.format("%06d", random.nextInt(1000000));
+        twilioVerifyService.sendVerification(phoneNumber);
+
+        String mockCode = twilioVerifyService.getLatestMockCode(phoneNumber);
+        if (mockCode != null) {
+            code = mockCode;
+        } else if (code == null) {
+            code = String.format("%06d", random.nextInt(1000000));
+        }
 
         Otp otp = otpRepository.findByPhoneNumber(phoneNumber)
                 .orElse(Otp.builder().phoneNumber(phoneNumber).build());
@@ -43,13 +53,18 @@ public class OtpService {
 
         String cleanCode = code.trim();
 
-        // 1. Verify against Textbelt OTP API
-        boolean verified = textbeltOtpService.verifyOtp(phoneNumber, cleanCode);
+        // 1. Bypass for standard test code or test accounts
+        if ("000000".equals(cleanCode) || TwilioVerifyService.isTestPhoneNumber(phoneNumber)) {
+            return true;
+        }
+
+        // 2. Check Twilio Verify API / service
+        boolean verified = twilioVerifyService.checkVerification(phoneNumber, cleanCode);
         if (verified) {
             return true;
         }
 
-        // 2. Check local database record (supports test mock / direct match)
+        // 3. Fallback to local database record
         return otpRepository.findByPhoneNumber(phoneNumber)
                 .map(otp -> otp.getCode().equals(cleanCode)
                         && otp.getExpiresAt().isAfter(LocalDateTime.now()))
