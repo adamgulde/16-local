@@ -1,12 +1,15 @@
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import type { User } from '../services/userService';
+
 interface InstructionsProps {
   onClose?: () => void;
   isModal?: boolean;
+  currentUser?: User | null;
 }
 
-export const Instructions = ({ onClose, isModal = false }: InstructionsProps) => {
+export const Instructions = ({ onClose, isModal = false, currentUser = null }: InstructionsProps) => {
   const navigate = useNavigate();
 
   const handleBack = () => {
@@ -148,6 +151,27 @@ export const Instructions = ({ onClose, isModal = false }: InstructionsProps) =>
             Prefer a structured hierarchy? Click the <strong>Columns</strong> toggle in the top bar to switch into a macOS Finder-style Miller columns view, where you can navigate connection chains column by column.
           </p>
         </div>
+
+        {!isModal && !currentUser && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '32px' }}>
+            <button
+              onClick={() => navigate('/login')}
+              style={{
+                background: '#3d8bff',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 32px',
+                fontSize: '16px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(61, 139, 255, 0.3)',
+              }}
+            >
+              Let's Go!
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

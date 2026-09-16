@@ -115,8 +115,8 @@ public class TwilioVerifyService {
         }
 
         String e164 = toE164(phoneNumber);
-        if (e164.length() < 8) {
-            throw new BadRequestException("Invalid phone number. Use E.164 format, e.g. +15551234567");
+        if (e164.length() < 10) {
+            throw new BadRequestException("Please enter a valid, complete phone number.");
         }
 
         // Test accounts: always generate default bypass 000000
@@ -165,8 +165,8 @@ public class TwilioVerifyService {
         String cleanCode = code.trim();
         String e164 = toE164(phoneNumber);
 
-        // Instant approval for test code or test accounts
-        if ("000000".equals(cleanCode) || isTestPhoneNumber(phoneNumber)) {
+        // Instant approval for test accounts using the default code
+        if (isTestPhoneNumber(phoneNumber) && "000000".equals(cleanCode)) {
             return true;
         }
 

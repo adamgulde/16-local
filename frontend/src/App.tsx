@@ -61,7 +61,7 @@ function App() {
                 />
               )
             ) : (
-              <Navigate to="/login" replace />
+              <Navigate to="/instructions" replace />
             )
           } />
           <Route path="/login" element={
@@ -70,7 +70,7 @@ function App() {
           <Route path="/register" element={
             currentUser ? <Navigate to="/" replace /> : <Register onLogin={setCurrentUser} />
           } />
-          <Route path="/instructions" element={<Instructions />} />
+          <Route path="/instructions" element={<Instructions currentUser={currentUser} />} />
           <Route path="*" element={<NotFound currentUser={currentUser} />} />
         </Routes>
       </div>

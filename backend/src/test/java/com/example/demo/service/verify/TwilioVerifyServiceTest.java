@@ -46,7 +46,7 @@ class TwilioVerifyServiceTest {
 
         assertThatThrownBy(() -> service.sendVerification("123"))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Invalid phone number");
+                .hasMessageContaining("Please enter a valid, complete phone number");
     }
 
     @Test
@@ -85,9 +85,9 @@ class TwilioVerifyServiceTest {
     }
 
     @Test
-    void checkVerification_alwaysAcceptsBypassCode000000() {
+    void checkVerification_rejectsBypassCodeForRegularNumbers() {
         String phone = "+1 555-987-6543";
-        assertThat(service.checkVerification(phone, "000000")).isTrue();
+        assertThat(service.checkVerification(phone, "000000")).isFalse();
     }
 
     @Test
