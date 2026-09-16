@@ -10,7 +10,7 @@ import com.example.demo.repository.ConnectionRequestRepository;
 import com.example.demo.repository.OtpRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.ConnectionService;
-import com.example.demo.service.textbelt.TextbeltOtpService;
+import com.example.demo.service.verify.TwilioVerifyService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -53,7 +53,7 @@ public class AuthControllerIT {
     private ConnectionService connectionService;
 
     @MockitoBean
-    private TextbeltOtpService textbeltOtpService;
+    private TwilioVerifyService twilioVerifyService;
 
     private String baseUrl(String path) {
         return "http://localhost:" + port + path;

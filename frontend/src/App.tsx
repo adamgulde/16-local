@@ -61,7 +61,7 @@ function App() {
                 />
               )
             ) : (
-              <Instructions currentUser={currentUser} />
+              <Navigate to="/instructions" replace />
             )
           } />
           <Route path="/login" element={

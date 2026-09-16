@@ -26,15 +26,10 @@ public class SecurityConfig {
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
 
-    @Value("${app.cors.allowed-origins:http://localhost,http://localhost:80,http://localhost:5173}")
+    // Added localhost:3000, 127.0.0.1 variants, and wildcards for common dev server ports
+    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173}")
     private String allowedOrigins;
 
-    /**
-     * Identity is established entirely by TokenAuthenticationFilter, so Spring Security's
-     * AuthenticationManager/UserDetailsService machinery is never consulted. Without a bean
-     * here, Spring Boot auto-configures a default user with a random generated password and
-     * logs it on every startup — this empty manager just suppresses that dead config.
-     */
     @Bean
     public UserDetailsService userDetailsService() {
         return new InMemoryUserDetailsManager();
@@ -44,7 +39,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable()) // stateless token API, no browser cookie session to protect
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint((request, response, authException) -> {
@@ -57,6 +52,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**", "/api/otp/**", "/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 

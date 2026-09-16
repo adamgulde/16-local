@@ -3,8 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.dto.OtpSendRequest;
 import com.example.demo.dto.OtpVerifyRequest;
 import com.example.demo.exception.GlobalExceptionHandler;
-import com.example.demo.service.textbelt.TextbeltOtpService;
-import com.example.demo.service.textbelt.TextbeltOtpService.TextbeltSendResult;
+import com.example.demo.service.verify.TwilioVerifyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,10 +16,10 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class OtpControllerTest {
@@ -28,7 +27,7 @@ class OtpControllerTest {
     private MockMvc mockMvc;
 
     @Mock
-    private TextbeltOtpService textbeltOtpService;
+    private TwilioVerifyService twilioVerifyService;
 
     @InjectMocks
     private OtpController otpController;
@@ -45,8 +44,7 @@ class OtpControllerTest {
 
     @Test
     void sendOtp_successful_returns200() throws Exception {
-        when(textbeltOtpService.sendOtp(any(), any(), any(), any(), any(), any()))
-                .thenReturn(new TextbeltSendResult(true, "txt-123", 50, null, "123456"));
+        when(twilioVerifyService.sendVerification("5551234567")).thenReturn(true);
 
         OtpSendRequest request = new OtpSendRequest("5551234567", "user123");
 
@@ -70,9 +68,9 @@ class OtpControllerTest {
 
     @Test
     void verifyOtp_validCode_returnsSuccessTrue() throws Exception {
-        when(textbeltOtpService.verifyOtp("user123", "123456")).thenReturn(true);
+        when(twilioVerifyService.checkVerification("5551234567", "123456")).thenReturn(true);
 
-        OtpVerifyRequest request = new OtpVerifyRequest("user123", "123456");
+        OtpVerifyRequest request = new OtpVerifyRequest("5551234567", "123456");
 
         mockMvc.perform(post("/api/otp/verify")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -85,9 +83,9 @@ class OtpControllerTest {
 
     @Test
     void verifyOtp_invalidCode_returnsSuccessFalse() throws Exception {
-        when(textbeltOtpService.verifyOtp("user123", "999999")).thenReturn(false);
+        when(twilioVerifyService.checkVerification("5551234567", "999999")).thenReturn(false);
 
-        OtpVerifyRequest request = new OtpVerifyRequest("user123", "999999");
+        OtpVerifyRequest request = new OtpVerifyRequest("5551234567", "999999");
 
         mockMvc.perform(post("/api/otp/verify")
                         .contentType(MediaType.APPLICATION_JSON)
