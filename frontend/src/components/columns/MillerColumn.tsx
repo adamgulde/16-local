@@ -6,6 +6,7 @@ import {
   type FriendSortOption,
   type SortOrder,
 } from '../../services/userService';
+import { getSafeErrorMessage } from '../../services/apiClient';
 import { ChevronRightIcon, SearchIcon } from '../Icons';
 
 interface MillerColumnProps {
@@ -71,7 +72,7 @@ export const MillerColumn = ({
       })
       .catch((err) => {
         if (active) {
-          setError(err?.response?.data?.message || 'Failed to load connections');
+          setError(getSafeErrorMessage(err, 'Failed to load connections'));
           setLoading(false);
         }
       });

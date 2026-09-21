@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { User, FriendSummary } from '../../services/userService';
 import { fullName, searchUsersApi, disconnectUser } from '../../services/userService';
-import { sendRequest, fetchMyRequests } from '../../services/requestService';
+import { sendRequest, fetchMyRequests, acceptRequest } from '../../services/requestService';
+import { getSafeErrorMessage } from '../../services/apiClient';
 import type { ConnectionRequest } from '../../services/types';
 import { MillerColumn } from './MillerColumn';
 import { UserCard } from '../UserCard';
@@ -46,6 +47,13 @@ export const MillerColumnsView = ({
 
   // Requests state for pending requests check
   const [requests, setRequests] = useState<ConnectionRequest[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actionError) return;
+    const t = setTimeout(() => setActionError(null), 4000);
+    return () => clearTimeout(t);
+  }, [actionError]);
 
   // User name cache for relationship lists
   const [userNameCache, setUserNameCache] = useState<Map<string, string>>(() => {
@@ -186,10 +194,41 @@ export const MillerColumnsView = ({
       await sendRequest(targetId);
       await loadRequests();
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Failed to send request');
+      setActionError(getSafeErrorMessage(err, 'Failed to send request'));
     } finally {
       setTimeout(() => {
         pendingActionIdsRef.current.delete(targetId);
+        setPendingActionIds(new Set(pendingActionIdsRef.current));
+      }, 300);
+    }
+  };
+
+  // Handle accept connection request
+  const handleAcceptRequest = async (requestId: string, senderId: string) => {
+    if (pendingActionIdsRef.current.has(senderId) || pendingActionIdsRef.current.has(requestId)) return;
+    pendingActionIdsRef.current.add(senderId);
+    pendingActionIdsRef.current.add(requestId);
+    setPendingActionIds(new Set(pendingActionIdsRef.current));
+    try {
+      await acceptRequest(requestId);
+      await loadRequests();
+      setPath((prev) => [...prev]);
+      if (inspectedUser && inspectedUser.id === senderId) {
+        setInspectedUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                relationships: [...(prev.relationships || []), currentUser.id],
+              }
+            : null
+        );
+      }
+    } catch (err: any) {
+      setActionError(getSafeErrorMessage(err, 'Failed to accept request'));
+    } finally {
+      setTimeout(() => {
+        pendingActionIdsRef.current.delete(senderId);
+        pendingActionIdsRef.current.delete(requestId);
         setPendingActionIds(new Set(pendingActionIdsRef.current));
       }, 300);
     }
@@ -209,7 +248,7 @@ export const MillerColumnsView = ({
         setInspectedUser((prev) => (prev ? { ...prev, relationships: prev.relationships.filter((r) => r !== currentUser.id) } : null));
       }
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Failed to disconnect');
+      setActionError(getSafeErrorMessage(err, 'Failed to disconnect'));
     } finally {
       setTimeout(() => {
         pendingActionIdsRef.current.delete(targetId);
@@ -244,6 +283,13 @@ export const MillerColumnsView = ({
       name: `${current.user.firstName}'s Connections`,
     };
   }, [path, currentUser]);
+
+  const incomingReq = useMemo(() => {
+    if (!inspectedUser) return undefined;
+    return requests.find(
+      (r) => r.sender.id === inspectedUser.id && r.receiver.id === currentUser.id && r.status === 'PENDING'
+    );
+  }, [requests, inspectedUser, currentUser.id]);
 
   return (
     <div
@@ -657,6 +703,12 @@ export const MillerColumnsView = ({
               }
               isRequestPending={isRequestPending(inspectedUser.id)}
               isSendingRequest={pendingActionIds.has(inspectedUser.id)}
+              hasIncomingRequest={Boolean(incomingReq)}
+              onAcceptRequest={() => incomingReq && handleAcceptRequest(incomingReq.id, inspectedUser.id)}
+              isAcceptingRequest={
+                pendingActionIds.has(inspectedUser.id) ||
+                (incomingReq ? pendingActionIds.has(incomingReq.id) : false)
+              }
               onDisconnect={() => handleDisconnect(inspectedUser.id)}
               showDisconnect={
                 inspectedUser.id !== currentUser.id &&
@@ -708,6 +760,12 @@ export const MillerColumnsView = ({
               }
               isRequestPending={isRequestPending(inspectedUser.id)}
               isSendingRequest={pendingActionIds.has(inspectedUser.id)}
+              hasIncomingRequest={Boolean(incomingReq)}
+              onAcceptRequest={() => incomingReq && handleAcceptRequest(incomingReq.id, inspectedUser.id)}
+              isAcceptingRequest={
+                pendingActionIds.has(inspectedUser.id) ||
+                (incomingReq ? pendingActionIds.has(incomingReq.id) : false)
+              }
               onDisconnect={() => handleDisconnect(inspectedUser.id)}
               showDisconnect={
                 inspectedUser.id !== currentUser.id &&
@@ -731,6 +789,37 @@ export const MillerColumnsView = ({
             />
           </div>
         </BottomSheet>
+      )}
+
+      {/* Floating Action Error Toast */}
+      {actionError && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 72,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(58, 20, 20, 0.95)',
+            border: '1px solid #ff6b6b',
+            borderRadius: '8px',
+            color: '#ff6b6b',
+            padding: '8px 16px',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontSize: '13px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          }}
+        >
+          <span>{actionError}</span>
+          <button
+            onClick={() => setActionError(null)}
+            style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', padding: 0 }}
+          >
+            <CloseIcon size={14} />
+          </button>
+        </div>
       )}
     </div>
   );

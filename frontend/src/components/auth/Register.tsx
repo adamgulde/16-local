@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignUpOtp, register, saveSession, validateInviteCode, verifySignUpOtp } from '../../services/authService';
-import { extractErrorMessage } from '../../services/apiClient';
+import { getSafeErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
@@ -98,7 +98,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       setResendSuccess(false);
       startCooldown(30);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Failed to send verification code.');
+      setError(getSafeErrorMessage(err, 'Failed to send verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -121,7 +121,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       await verifySignUpOtp(phoneNumber.trim(), trimmedCode);
       setStep('PROFILE');
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Invalid or expired verification code.');
+      setError(getSafeErrorMessage(err, 'Invalid or expired verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -153,7 +153,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       saveSession(auth);
       onLogin(auth.user);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Registration failed.');
+      setError(getSafeErrorMessage(err, 'Registration failed.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -172,7 +172,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       setResendSuccess(true);
       startCooldown(30);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Failed to resend code.');
+      setError(getSafeErrorMessage(err, 'Failed to resend code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;

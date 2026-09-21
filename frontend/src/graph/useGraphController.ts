@@ -4,7 +4,7 @@ import type { ForceGraphMethods } from 'react-force-graph-2d';
 import { fetchUsers, transformToGraphData, fullName, fetchReach, disconnectUser, updateAutoRejectSetting, searchUsersApi } from '../services/userService';
 import type { User, ReachResponse } from '../services/userService';
 import { sendRequest, fetchMyRequests, acceptRequest, declineRequest, findPath } from '../services/requestService';
-import { extractErrorMessage } from '../services/apiClient';
+import { getSafeErrorMessage } from '../services/apiClient';
 import type { ConnectionRequest } from '../services/types';
 import { computeDistanceFromMe } from './rendering';
 import type { DisplayLink, GNode, GLink } from './rendering';
@@ -454,7 +454,7 @@ export const useGraphController = (
         await sendRequest(receiverId);
         await loadData();
       } catch (err) {
-        setActionError(extractErrorMessage(err) || 'Could not send connection request.');
+        setActionError(getSafeErrorMessage(err, 'Could not send connection request.'));
       } finally {
         setTimeout(() => {
           pendingActionIdsRef.current.delete(receiverId);

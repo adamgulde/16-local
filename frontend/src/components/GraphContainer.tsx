@@ -1169,6 +1169,15 @@ export const GraphContainer = ({
             showSendRequest={c.selectedUser.id !== currentUser.id && !c.connectedUserIds.has(c.selectedUser.id)}
             isRequestPending={c.sentRequestUserIds.has(c.selectedUser.id)}
             isSendingRequest={c.isActionPending(c.selectedUser.id)}
+            hasIncomingRequest={c.receivedRequestUserIds.has(c.selectedUser.id)}
+            onAcceptRequest={() => {
+              const reqId = c.receivedRequestMap.get(c.selectedUser!.id);
+              if (reqId) c.handleAcceptRequest(reqId);
+            }}
+            isAcceptingRequest={
+              c.isActionPending(c.selectedUser.id) ||
+              Boolean(c.receivedRequestMap.get(c.selectedUser.id) && c.isActionPending(c.receivedRequestMap.get(c.selectedUser.id)!))
+            }
             onFindPath={() => c.handleFindPath(c.selectedUser!.id)}
             showFindPath={c.selectedUser.id !== currentUser.id}
             onDisconnect={() => c.handleDisconnect(c.selectedUser!.id)}

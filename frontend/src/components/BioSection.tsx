@@ -16,6 +16,7 @@ export const BioSection = ({ subjectId, bio, isCurrentUser, onBioUpdated }: BioS
   const [draft, setDraft] = useState(bio);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bioError, setBioError] = useState<string | null>(null);
   const savingRef = useRef(false);
 
   useEffect(() => {
@@ -23,17 +24,21 @@ export const BioSection = ({ subjectId, bio, isCurrentUser, onBioUpdated }: BioS
     setSavedBio(bio);
     setDraft(bio);
     setEditing(false);
+    setBioError(null);
   }, [subjectId, bio]);
 
   const handleSave = async () => {
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
+    setBioError(null);
     try {
       await updateBio(subjectId, draft);
       setSavedBio(draft);
       setEditing(false);
       onBioUpdated?.(draft);
+    } catch {
+      setBioError('Could not update bio.');
     } finally {
       setTimeout(() => {
         savingRef.current = false;
@@ -63,11 +68,13 @@ export const BioSection = ({ subjectId, bio, isCurrentUser, onBioUpdated }: BioS
               onClick={() => {
                 setDraft(savedBio);
                 setEditing(false);
+                setBioError(null);
               }}
             >
               Cancel
             </button>
           </div>
+          {bioError && <p style={{ color: '#ff6b6b', fontSize: '12px', margin: '4px 0 0' }}>{bioError}</p>}
         </div>
       ) : (
         <>

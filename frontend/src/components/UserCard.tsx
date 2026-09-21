@@ -15,6 +15,9 @@ interface UserCardProps {
   showSendRequest?: boolean;
   isRequestPending?: boolean;
   isSendingRequest?: boolean;
+  hasIncomingRequest?: boolean;
+  onAcceptRequest?: () => void;
+  isAcceptingRequest?: boolean;
   onFindPath?: () => void;
   showFindPath?: boolean;
   onDisconnect?: () => void;
@@ -52,6 +55,9 @@ export const UserCard = ({
   showSendRequest,
   isRequestPending,
   isSendingRequest,
+  hasIncomingRequest,
+  onAcceptRequest,
+  isAcceptingRequest,
   onFindPath,
   showFindPath,
   onDisconnect,
@@ -139,19 +145,37 @@ export const UserCard = ({
             </button>
           )}
           {showSendRequest && (
-            <button
-              onClick={isRequestPending || isSendingRequest ? undefined : onSendRequest}
-              disabled={isRequestPending || isSendingRequest}
-              style={{
-                ...primaryButtonStyle,
-                background: isRequestPending || isSendingRequest ? '#2c2c2e' : '#1e3a5f',
-                borderColor: isRequestPending || isSendingRequest ? '#3a3a40' : '#2b5278',
-                color: isRequestPending || isSendingRequest ? '#9a9a9a' : '#fff',
-                cursor: isRequestPending || isSendingRequest ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {isSendingRequest ? 'Sending Request...' : isRequestPending ? 'Request Sent' : 'Send Connection Request'}
-            </button>
+            hasIncomingRequest ? (
+              <button
+                type="button"
+                onClick={isAcceptingRequest ? undefined : onAcceptRequest}
+                disabled={isAcceptingRequest}
+                style={{
+                  ...primaryButtonStyle,
+                  background: isAcceptingRequest ? '#2c2c2e' : '#2e7d32',
+                  borderColor: isAcceptingRequest ? '#3a3a40' : '#4caf50',
+                  color: isAcceptingRequest ? '#9a9a9a' : '#fff',
+                  cursor: isAcceptingRequest ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isAcceptingRequest ? 'Accepting...' : 'Accept Request'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={isRequestPending || isSendingRequest ? undefined : onSendRequest}
+                disabled={isRequestPending || isSendingRequest}
+                style={{
+                  ...primaryButtonStyle,
+                  background: isRequestPending || isSendingRequest ? '#2c2c2e' : '#1e3a5f',
+                  borderColor: isRequestPending || isSendingRequest ? '#3a3a40' : '#2b5278',
+                  color: isRequestPending || isSendingRequest ? '#9a9a9a' : '#fff',
+                  cursor: isRequestPending || isSendingRequest ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isSendingRequest ? 'Sending Request...' : isRequestPending ? 'Request Sent' : 'Send Connection Request'}
+              </button>
+            )
           )}
           {showDisconnect && (
             <button

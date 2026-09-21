@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignInOtp, verifySignInOtp, saveSession } from '../../services/authService';
-import { extractErrorMessage } from '../../services/apiClient';
+import { getSafeErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
@@ -44,7 +44,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       setResendSuccess(false);
       startCooldown(30);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Failed to send verification code.');
+      setError(getSafeErrorMessage(err, 'Failed to send verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -70,7 +70,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       localStorage.setItem('remembered_phone', resolvedPhone);
       onLogin(auth.user);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Invalid or expired code.');
+      setError(getSafeErrorMessage(err, 'Invalid or expired code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -90,7 +90,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       setResendSuccess(true);
       startCooldown(30);
     } catch (err) {
-      setError(extractErrorMessage(err) || 'Failed to resend code.');
+      setError(getSafeErrorMessage(err, 'Failed to resend code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;

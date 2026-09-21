@@ -38,6 +38,7 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
   const [tagInput, setTagInput] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const [savedNote, setSavedNote] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
@@ -142,10 +143,13 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
     if (noteSavingRef.current) return;
     noteSavingRef.current = true;
     setNoteSaving(true);
+    setNoteError(null);
     try {
       await saveNote(subjectId, noteDraft);
       setSavedNote(noteDraft);
       setEditingNote(false);
+    } catch {
+      setNoteError('Could not save note.');
     } finally {
       setTimeout(() => {
         noteSavingRef.current = false;
@@ -280,11 +284,13 @@ export const TagsAndNotes = ({ subjectId, isCurrentUser }: TagsAndNotesProps) =>
                     onClick={() => {
                       setNoteDraft(savedNote);
                       setEditingNote(false);
+                      setNoteError(null);
                     }}
                   >
                     Cancel
                   </button>
                 </div>
+                {noteError && <p style={{ color: '#ff6b6b', fontSize: '12px', margin: '4px 0 0' }}>{noteError}</p>}
               </div>
             ) : (
               <>
