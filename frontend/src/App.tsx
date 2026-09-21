@@ -12,6 +12,7 @@ import { loadSessionUser } from './services/authService';
 import { useIsMobile } from './hooks/useIsMobile';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { APP_VERSION } from './version';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadSessionUser());
@@ -161,6 +162,26 @@ function App() {
             </ErrorBoundary>
           } />
         </Routes>
+        <footer
+          style={{
+            position: 'fixed',
+            bottom: 4,
+            right: 8,
+            zIndex: 9999,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            fontSize: '11px',
+            color: '#8e8e93',
+            fontFamily: 'monospace',
+            background: 'rgba(28, 28, 30, 0.75)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            letterSpacing: '0.3px',
+          }}
+        >
+          v{APP_VERSION}
+        </footer>
       </div>
     </BrowserRouter>
   );

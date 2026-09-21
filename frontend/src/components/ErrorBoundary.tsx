@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -19,9 +19,9 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public componentDidCatch(error: Error) {
     // Log sanitized error indicator without dumping raw traces to UI
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.warn('ErrorBoundary caught an error:', error.message);
     }
   }

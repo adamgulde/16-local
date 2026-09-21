@@ -80,4 +80,36 @@ describe('Error Sanitization & Masking', () => {
     const result = getSafeErrorMessage(error, 'Please check your input.');
     expect(result).toBe('Please check your input.');
   });
+
+  it('extracts safe error messages and suppresses unsafe ones via extractErrorMessage', () => {
+    const safeError = new AxiosError(
+      'Bad Request',
+      '400',
+      {} as InternalAxiosRequestConfig,
+      {},
+      {
+        status: 400,
+        statusText: 'Bad Request',
+        data: { error: 'Invalid invite code' },
+        headers: {},
+        config: {} as InternalAxiosRequestConfig,
+      } as AxiosResponse
+    );
+    expect(extractErrorMessage(safeError)).toBe('Invalid invite code');
+
+    const unsafeError = new AxiosError(
+      'Bad Request',
+      '400',
+      {} as InternalAxiosRequestConfig,
+      {},
+      {
+        status: 400,
+        statusText: 'Bad Request',
+        data: { error: 'NullPointerException at service' },
+        headers: {},
+        config: {} as InternalAxiosRequestConfig,
+      } as AxiosResponse
+    );
+    expect(extractErrorMessage(unsafeError)).toBeUndefined();
+  });
 });
