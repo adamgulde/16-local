@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
-import { fetchUsers, transformToGraphData, fullName, fetchReach, disconnectUser, updateAutoRejectSetting, searchUsersApi } from '../services/userService';
+import { fetchUsers, transformToGraphData, fullName, fetchReach, disconnectUser, updateAutoRejectSetting, type GraphData, type SearchMode, type TagCriteria } from '../services/userService';
+import { EMPTY_TAG_CRITERIA, useUserSearch } from '../hooks/useUserSearch';
 import type { User, ReachResponse } from '../services/userService';
+import { fetchAllTags, type TagsUpdate } from '../services/tagService';
 import { sendRequest, fetchMyRequests, acceptRequest, declineRequest, findPath } from '../services/requestService';
 import { getSafeErrorMessage } from '../services/apiClient';
 import type { ConnectionRequest } from '../services/types';
@@ -11,37 +13,18 @@ import type { DisplayLink, GNode, GLink } from './rendering';
 
 const GLOBAL_ZOOM_PADDING = 40;
 const LOCATE_ME_ZOOM = 4;
-const POLL_INTERVAL_MS = 5000;
 
-// True only if the two lists are the same requests in the same states — ignores array order,
-// which the backend doesn't guarantee is stable across two separate queries.
-const requestsEqual = (a: ConnectionRequest[], b: ConnectionRequest[]): boolean => {
-  if (a.length !== b.length) return false;
-  const key = (r: ConnectionRequest) => `${r.id}:${r.status}`;
-  const aKeys = new Set(a.map(key));
-  return b.every((r) => aKeys.has(key(r)));
-};
-
-// Checks if the user directory or graph topology changed (membership or connections)
-const usersEqual = (a: User[], b: User[]): boolean => {
-  if (a.length !== b.length) return false;
-  const aMap = new Map(a.map((u) => [u.id, u]));
-  for (const uB of b) {
-    const uA = aMap.get(uB.id);
-    if (!uA) return false;
-    if (uA.firstName !== uB.firstName || uA.lastName !== uB.lastName) return false;
-    if (uA.relationships.length !== uB.relationships.length) return false;
-    const aRels = new Set(uA.relationships);
-    if (!uB.relationships.every((r) => aRels.has(r))) return false;
-  }
-  return true;
-};
+interface Topology {
+  graph: GraphData;
+  distanceFromMe: Map<string, number>;
+}
+const EMPTY_TOPOLOGY: Topology = { graph: { nodes: [], links: [] }, distanceFromMe: new Map() };
 
 /**
  * Every piece of state, derived data, and handler the graph UI needs — deliberately holds no
  * opinion on layout or presentation, so the desktop (GraphContainer) and mobile (MobileGraphView)
  * renderers can both wrap it in whatever chrome fits their screen without the underlying
- * behavior (physics, search, path-stays-open selection, live polling) ever drifting apart
+ * behavior (physics, search, path-stays-open selection) ever drifting apart
  * between the two.
  */
 export const useGraphController = (
@@ -68,25 +51,19 @@ export const useGraphController = (
   const [requestsTab, setRequestsTab] = useState<'received' | 'sent' | 'newUsers'>('received');
 
   const [maxDistance, setMaxDistance] = useState<number>(Infinity);
-  const [searchNames, setSearchNames] = useState(true);
-  const [searchTags, setSearchTags] = useState(true);
-  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState<SearchMode>('names');
+  const [tagCriteria, setTagCriteria] = useState<TagCriteria>(EMPTY_TAG_CRITERIA);
   const [autoRejectDegree, setAutoRejectDegree] = useState<number | null>(currentUser.maxConnectionDegree ?? null);
-  const [hasGraphUpdate, setHasGraphUpdate] = useState(false);
-  const [autoApplyUpdates, setAutoApplyUpdates] = useState(false);
-  const pendingUsersRef = useRef<User[] | null>(null);
-  const pendingRequestsRef = useRef<ConnectionRequest[] | null>(null);
-
-  const distanceFromMe = useMemo(() => computeDistanceFromMe(users, currentUser.id), [users, currentUser.id]);
+  // Rebuilt only when the directory is fetched. The layout depends on nothing but who exists and
+  // who's connected, so editing a bio or tags never hands ForceGraph2D a new graphData to re-lay-out.
+  const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
+  const { graph: baseGraphData, distanceFromMe } = topology;
 
   // Confirmed connections come straight off each user's relationships. Pending ones are only
   // ever the current user's own (fetchMyRequests is self-scoped by construction), which is
   // also exactly the privacy rule we want: nobody else's in-progress requests show on the graph.
-  // Split from the pending-link overlay below so that with the (default-off) toggle disabled,
-  // graphData depends on `users` alone — a `requests` change (e.g. the live poll) never
-  // recomputes it, and ForceGraph2D never sees a "new" graphData object to reset/rejiggle over.
-  const baseGraphData = useMemo(() => transformToGraphData(users), [users]);
-
+  // Kept apart from the pending-link overlay below so that with the (default-off) toggle
+  // disabled, a `requests` change never produces a new graphData object.
   const graphData = useMemo(() => {
     if (!showPendingConnections) return baseGraphData;
     const seen = new Set(baseGraphData.links.map((l) => [l.source, l.target].sort().join('-')));
@@ -101,33 +78,21 @@ export const useGraphController = (
     return { nodes: baseGraphData.nodes, links: [...baseGraphData.links, ...pendingLinks] };
   }, [baseGraphData, requests, showPendingConnections]);
 
-  // Search with debounce across names and/or tags based on checkboxes
-  const [searchMatches, setSearchMatches] = useState<User[]>([]);
-  useEffect(() => {
-    const term = searchTerm.trim();
-    if (!term || (!searchNames && !searchTags)) {
-      setSearchMatches([]);
-      return;
+  // One search mode at a time. Text modes feed the suggestion dropdown; Tags mode also dims
+  // every node that doesn't match, so the graph itself becomes the result list.
+  const userSearch = useUserSearch(searchMode, searchTerm, tagCriteria);
+  const searchMatches = useMemo(() => {
+    if (searchMode === 'tags') return userSearch.results;
+    if (userSearch.error && searchMode === 'names') {
+      const lower = searchTerm.trim().toLowerCase();
+      return users.filter((u) => fullName(u).toLowerCase().includes(lower)).slice(0, 8);
     }
-    let active = true;
-    const timer = setTimeout(() => {
-      searchUsersApi(term, searchNames, searchTags)
-        .then((results) => {
-          if (active) setSearchMatches(results.slice(0, 8));
-        })
-        .catch(() => {
-          if (active && searchNames) {
-            const lower = term.toLowerCase();
-            setSearchMatches(users.filter((u) => fullName(u).toLowerCase().includes(lower)).slice(0, 8));
-          }
-        });
-    }, 200);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [searchTerm, searchNames, searchTags, users]);
+    return userSearch.results.slice(0, 8);
+  }, [searchMode, searchTerm, userSearch.results, userSearch.error, users]);
+  const tagMatchIds = useMemo(
+    () => (searchMode === 'tags' && userSearch.active ? new Set(userSearch.results.map((u) => u.id)) : null),
+    [searchMode, userSearch.active, userSearch.results]
+  );
 
   // Only PENDING requests are actionable/notification-worthy — once accepted or declined
   // (by either party), the outcome is already reflected elsewhere (the graph connection, or
@@ -198,96 +163,30 @@ export const useGraphController = (
     return map;
   }, [activePath]);
 
+  // Everything the graph shows arrives in this one load: people (with their tags), your requests,
+  // and the tag dictionary. There's no background refresh — only this initial load, your own
+  // actions, and the manual "Refresh Graph Now" re-run it.
   const loadData = useCallback(async () => {
     try {
-      const [usersData, requestsData] = await Promise.all([fetchUsers(), fetchMyRequests()]);
+      const [usersData, requestsData] = await Promise.all([fetchUsers(), fetchMyRequests(), fetchAllTags()]);
       setUsers(usersData);
+      setTopology({
+        graph: transformToGraphData(usersData),
+        distanceFromMe: computeDistanceFromMe(usersData, currentUser.id),
+      });
       setRequests(requestsData);
       setInitError(null);
-      setHasGraphUpdate(false);
-      pendingUsersRef.current = null;
-      pendingRequestsRef.current = null;
     } catch {
       setInitError('Could not load the directory. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  const handleRefreshGraph = useCallback(() => {
-    if (pendingUsersRef.current) {
-      setUsers(pendingUsersRef.current);
-      pendingUsersRef.current = null;
-      if (pendingRequestsRef.current) {
-        setRequests(pendingRequestsRef.current);
-        pendingRequestsRef.current = null;
-      }
-      setHasGraphUpdate(false);
-    } else {
-      loadData();
-    }
-  }, [loadData]);
-
-  const dismissGraphUpdate = useCallback(() => {
-    setHasGraphUpdate(false);
-  }, []);
+  }, [currentUser.id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
-
-  // Refreshes the graph when the user returns to the tab after a long inactive/background state
-  useEffect(() => {
-    const handleTabActive = () => {
-      if (document.visibilityState === 'visible') {
-        loadData();
-      }
-    };
-    document.addEventListener('visibilitychange', handleTabActive);
-    window.addEventListener('focus', handleTabActive);
-    return () => {
-      document.removeEventListener('visibilitychange', handleTabActive);
-      window.removeEventListener('focus', handleTabActive);
-    };
-  }, [loadData]);
-
-  // Polls for changes made by other users (a request they sent you, one they accepted, or new
-  // users/connections added to the network).
-  useEffect(() => {
-    const timer = window.setInterval(async () => {
-      try {
-        const [requestsData, usersData] = await Promise.all([
-          fetchMyRequests(),
-          fetchUsers(),
-        ]);
-
-        // Always update requests so notification bell and incoming requests are immediately accurate
-        setRequests((prev) => (requestsEqual(prev, requestsData) ? prev : requestsData));
-
-        // Check if users or graph topology has changed compared to currently rendered users
-        setUsers((currentUsers) => {
-          if (currentUsers.length === 0) return usersData;
-          const changed = !usersEqual(currentUsers, usersData);
-          if (changed) {
-            if (autoApplyUpdates) {
-              setHasGraphUpdate(false);
-              return usersData;
-            } else {
-              pendingUsersRef.current = usersData;
-              pendingRequestsRef.current = requestsData;
-              setHasGraphUpdate(true);
-              return currentUsers;
-            }
-          }
-          return currentUsers;
-        });
-      } catch {
-        // Silent failure in background poll
-      }
-    }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [autoApplyUpdates]);
 
   // Selecting a node: if a path is currently open and this node is one of its hops, leave the
   // path (and its highlight) exactly as-is. Otherwise, close any open path and highlight just
@@ -365,11 +264,11 @@ export const useGraphController = (
   // connection link) and pans to them on the graph, keeping the current zoom level rather than
   // jumping to whatever scale would fit their connections.
   const focusUser = useCallback(
-    (id: string) => {
+    (id: string, durationMs = 500) => {
       selectNode(id);
       const node = graphData.nodes.find((n) => n.id === id) as GNode | undefined;
       if (node && node.x != null && node.y != null) {
-        fgRef.current?.centerAt(node.x, node.y, 500);
+        fgRef.current?.centerAt(node.x, node.y, durationMs);
       }
     },
     [selectNode, graphData, fgRef]
@@ -384,12 +283,15 @@ export const useGraphController = (
     [focusUser]
   );
 
-  const handleLocateMe = useCallback(() => {
-    const node = graphData.nodes.find((n) => n.id === currentUser.id) as GNode | undefined;
-    if (!node || node.x == null || node.y == null) return;
-    fgRef.current?.centerAt(node.x, node.y, 800);
-    fgRef.current?.zoom(LOCATE_ME_ZOOM, 800);
-  }, [graphData, currentUser.id, fgRef]);
+  const handleLocateMe = useCallback(
+    (durationMs = 800) => {
+      const node = graphData.nodes.find((n) => n.id === currentUser.id) as GNode | undefined;
+      if (!node || node.x == null || node.y == null) return;
+      fgRef.current?.centerAt(node.x, node.y, durationMs);
+      fgRef.current?.zoom(LOCATE_ME_ZOOM, durationMs);
+    },
+    [graphData, currentUser.id, fgRef]
+  );
 
   const handleGlobalZoom = useCallback(() => {
     fgRef.current?.zoomToFit(800, GLOBAL_ZOOM_PADDING);
@@ -574,6 +476,19 @@ export const useGraphController = (
     [currentUser.id]
   );
 
+  // Only `users` (and the open card's copy) change: the graph itself is untouched by tag edits.
+  const updateUserTags = useCallback((userId: string, update: TagsUpdate) => {
+    const apply = (u: User): User => (u.id === userId ? { ...u, tags: update(u.tags ?? []) } : u);
+    setUsers((prev) => prev.map(apply));
+    setSelectedUser((prev) => (prev ? apply(prev) : prev));
+  }, []);
+
+  const updateUserNote = useCallback((userId: string, note: string) => {
+    const apply = (u: User): User => (u.id === userId ? { ...u, note } : u);
+    setUsers((prev) => prev.map(apply));
+    setSelectedUser((prev) => (prev ? apply(prev) : prev));
+  }, []);
+
   // Escape (or a mobile "back"/close affordance calling the same setter) closes whatever's
   // currently "open," most-transient first: the search dropdown, then the selected-user card,
   // then an open find-path result.
@@ -618,14 +533,14 @@ export const useGraphController = (
     setSearchTerm,
     showSuggestions,
     setShowSuggestions,
-    searchNames,
-    setSearchNames,
-    searchTags,
-    setSearchTags,
+    searchMode,
+    setSearchMode,
+    tagCriteria,
+    setTagCriteria,
+    tagMatchIds,
+    searchLoading: userSearch.loading,
     maxDistance,
     setMaxDistance,
-    selectedTagFilter,
-    setSelectedTagFilter,
     autoRejectDegree,
     isLoading,
     initError,
@@ -659,14 +574,11 @@ export const useGraphController = (
     handleDisconnect,
     handleUpdateAutoReject,
     handleBioUpdated,
+    updateUserTags,
+    updateUserNote,
     pendingActionIds,
     isActionPending,
     isUpdatingAutoReject,
-    hasGraphUpdate,
-    autoApplyUpdates,
-    setAutoApplyUpdates,
-    handleRefreshGraph,
-    dismissGraphUpdate,
     newUsers,
     connectedUserIds,
     sentRequestUserIds,

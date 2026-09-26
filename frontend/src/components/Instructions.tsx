@@ -57,6 +57,7 @@ const STEP_TITLES = [
   'Navigation & View Controls',
   'Finding Paths & Requests',
   'Inviting Friends & Auto-Connect',
+  'Tags & Network Identity',
   'Columns View',
 ];
 
@@ -176,8 +177,8 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
       tags: ['AI', 'Data', 'Python'],
     },
     {
-      id: 'elena',
-      name: 'Elena Rostova',
+      id: 'elon',
+      name: 'Elon Musk',
       phone: '(555) 014-7788',
       degree: 3,
       color: '#9ca3af',
@@ -215,8 +216,8 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
     { source: 'you', target: 'bob' },
     { source: 'alice', target: 'carol' },
     { source: 'bob', target: 'david' },
-    { source: 'carol', target: 'elena' },
-    { source: 'david', target: 'elena' },
+    { source: 'elon', target: 'carol' },
+    { source: 'david', target: 'elon' },
   ]);
 
   // When Sam connects, turn Sam green & link directly to You with a SOLID line
@@ -237,13 +238,27 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
     }
   }, [samConnected]);
 
-  // Step changes: reset active path if stepping back before step 2
+  // Step changes: reset active path if stepping back before step 2; auto-open You card at step 4
   useEffect(() => {
     if (currentStep < 2) {
       setActivePath(null);
       setPathMessage(null);
     }
+    if (currentStep === 4) {
+      setSelectedNodeId('you');
+    }
   }, [currentStep]);
+
+  const handleToggleDemoTag = (tagToAdd: string) => {
+    setNodes((prevNodes) =>
+      prevNodes.map((n) => {
+        if (n.id !== 'you') return n;
+        const exists = n.tags.includes(tagToAdd);
+        const updatedTags = exists ? n.tags.filter((t) => t !== tagToAdd) : [...n.tags, tagToAdd];
+        return { ...n, tags: updatedTags };
+      })
+    );
+  };
 
   // Prevent entire page from pinch-zooming on mobile
   useEffect(() => {
@@ -761,7 +776,7 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
   };
 
   const handleNextStep = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       setCurrentStep((prev) => prev + 1);
     } else {
       handleExitTutorial();
@@ -952,9 +967,9 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
           pointerEvents: 'none',
         }}
       >
-        {/* Left Side: View Switcher (Unlocked in Step 5) OR Desktop Search OR Mailbox */}
+        {/* Left Side: View Switcher (Unlocked in Step 6 / Columns Step) OR Desktop Search OR Mailbox */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
-          {currentStep === 4 ? (
+          {currentStep >= 5 ? (
             <div
               style={{
                 background: 'rgba(28, 28, 30, 0.94)',
@@ -1886,7 +1901,7 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
 
           {/* Dots Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            {[0, 1, 2, 3, 4].map((idx) => (
+            {STEP_TITLES.map((_, idx) => (
               <div
                 key={idx}
                 style={{
@@ -1938,6 +1953,42 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
           )}
 
           {currentStep === 4 && (
+            <div>
+              <p style={{ margin: '0 0 6px 0', fontSize: isMobile ? '11px' : '12px', color: '#c5c5c7', lineHeight: 1.35 }}>
+                <strong style={{ color: '#6ab0ff' }}>Tags & Network Identity:</strong> Tags allow connections and recruiters to find you across degrees of separation without exposing your phone number. Tap demo tags below to customize your identity:
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {['Profession › Software Engineer', 'Education › Computer Science', 'Interests › Jazz', 'Language › Spanish'].map((demoTag) => {
+                  const youNode = nodes.find((n) => n.id === 'you');
+                  const isTagged = youNode?.tags.includes(demoTag);
+                  return (
+                    <button
+                      key={demoTag}
+                      type="button"
+                      onClick={() => handleToggleDemoTag(demoTag)}
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '10.5px',
+                        border: isTagged ? '1px solid #3d8bff' : '1px solid #3a3a42',
+                        background: isTagged ? 'rgba(61, 139, 255, 0.25)' : '#232326',
+                        color: isTagged ? '#ffffff' : '#a0a0ab',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                      }}
+                    >
+                      <TagIcon size={10} color={isTagged ? '#6ab0ff' : '#808088'} />
+                      {isTagged ? `✓ ${demoTag}` : `+ ${demoTag}`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {currentStep === 5 && (
             <p style={{ margin: 0, fontSize: isMobile ? '11px' : '12px', color: '#c5c5c7', lineHeight: 1.35 }}>
               <strong style={{ color: '#6ab0ff' }}>Columns View Unlocked!</strong> Tap{' '}
               <strong style={{ color: '#3d8bff' }}>Columns</strong> in the top switcher. On mobile, use the tier dropdown to navigate between columns without horizontal scrolling!
@@ -1981,8 +2032,8 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
             type="button"
             onClick={handleNextStep}
             style={{
-              background: currentStep === 4 ? '#2e7d32' : '#2a5f9e',
-              border: currentStep === 4 ? '1px solid #4caf50' : '1px solid #3d8bff',
+              background: currentStep === 5 ? '#2e7d32' : '#2a5f9e',
+              border: currentStep === 5 ? '1px solid #4caf50' : '1px solid #3d8bff',
               color: '#ffffff',
               borderRadius: '6px',
               padding: isMobile ? '5px 14px' : '6px 16px',
@@ -1995,7 +2046,7 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
               boxShadow: '0 2px 10px rgba(61, 139, 255, 0.35)',
             }}
           >
-            {currentStep === 4 ? (
+            {currentStep === 5 ? (
               effectiveUser ? 'Finish' : 'Get Started'
             ) : (
               <>

@@ -17,6 +17,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Matches a two-word "first last" query against the two fields separately. */
     List<User> findByFirstNameContainingIgnoreCaseAndLastNameContainingIgnoreCase(String firstName, String lastName);
 
+    /** Bio search — bios are public on every card, so no viewer filter is needed. */
+    List<User> findByBioContainingIgnoreCase(String bio);
+
     /** Range-scan for the map viewport: mapIndex is the combined Hilbert index a user is placed at. */
     List<User> findByMapIndexBetween(Long start, Long end);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { fullName, formatRelativeTime } from '../services/userService';
 import type { User, Node } from '../services/userService';
@@ -11,6 +11,7 @@ import {
   linkLineDashFor,
   paintNodePointerArea,
   useGraphPhysics,
+  STATIC_LAYOUT,
 } from '../graph/rendering';
 import type { GNode, GLink, LinkExtra } from '../graph/rendering';
 import { UserCard } from './UserCard';
@@ -26,12 +27,13 @@ import {
   MaximizeIcon,
   SlidersIcon,
   CloseIcon,
-  TagIcon,
   ColumnsIcon,
   GridIcon,
 } from './Icons';
-import { fetchAllTags, type Tag } from '../services/tagService';
-import { searchUsersApi } from '../services/userService';
+import { SearchModeToggle } from './tags/SearchModeToggle';
+import { SEARCH_PLACEHOLDERS } from './tags/searchModes';
+import { TagQueryField, type TagQueryFieldHandle } from './tags/TagQueryField';
+import { pickerRows } from './tags/tagTheme';
 
 interface GraphContainerProps {
   currentUser: User;
@@ -78,24 +80,19 @@ export const GraphContainer = ({
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(currentUser, fgRef);
   const hasOrientedRef = useRef(false);
+  const tagQueryRef = useRef<TagQueryFieldHandle>(null);
+  const [graphReady, setGraphReady] = useState(false);
 
-  useEffect(() => {
-    if (c.graphData.nodes.length > 0 && !hasOrientedRef.current) {
-      if (initialFocusUserId) {
-        hasOrientedRef.current = true;
-        c.handleSelectSearchResult(initialFocusUserId);
-      } else if (initialFindPathTargetId) {
-        hasOrientedRef.current = true;
-        c.handleFindPath(initialFindPathTargetId);
-      } else {
-        hasOrientedRef.current = true;
-        const timer = setTimeout(() => {
-          c.handleLocateMe();
-        }, 150);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [c.graphData.nodes, initialFocusUserId, initialFindPathTargetId, c.handleSelectSearchResult, c.handleFindPath, c.handleLocateMe]);
+  // The engine first stops once the static layout is final (see STATIC_LAYOUT). Only then is the
+  // camera placed — instantly — and the canvas revealed, so nothing moves when the graph appears.
+  const handleEngineStop = () => {
+    if (hasOrientedRef.current) return;
+    hasOrientedRef.current = true;
+    if (initialFocusUserId) c.focusUser(initialFocusUserId, 0);
+    else if (initialFindPathTargetId) c.handleFindPath(initialFindPathTargetId);
+    else c.handleLocateMe(0);
+    setGraphReady(true);
+  };
 
   const graphResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [graphSize, setGraphSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -104,58 +101,7 @@ export const GraphContainer = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDistanceSlider, setShowDistanceSlider] = useState(false);
-  const [showTagFilter, setShowTagFilter] = useState(false);
   const [frontCard, setFrontCard] = useState<'user' | 'path'>('user');
-
-  // Tag filter state
-  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
-  const [tagCategoryFilter, setTagCategoryFilter] = useState<'ALL' | 'GLOBAL' | 'CUSTOM'>('ALL');
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [filteredUserIds, setFilteredUserIds] = useState<Set<string> | null>(null);
-
-  useEffect(() => {
-    fetchAllTags().then(setAvailableTags).catch(() => {});
-  }, []);
-
-  // Update filteredUserIds when selectedTag or tagCategoryFilter changes
-  useEffect(() => {
-    if (!selectedTag && tagCategoryFilter === 'ALL') {
-      setFilteredUserIds(null);
-      return;
-    }
-
-    if (selectedTag) {
-      searchUsersApi(selectedTag, false, true)
-        .then((matched) => {
-          setFilteredUserIds(new Set(matched.map((u) => u.id)));
-        })
-        .catch(() => setFilteredUserIds(null));
-    } else if (tagCategoryFilter === 'GLOBAL') {
-      // Find all users matching any global tag label
-      const globalLabels = availableTags.filter((t) => t.category !== 'CUSTOM').map((t) => t.label);
-      Promise.all(globalLabels.slice(0, 5).map((l) => searchUsersApi(l, false, true)))
-        .then((batches) => {
-          const ids = new Set<string>();
-          batches.forEach((batch) => batch.forEach((u) => ids.add(u.id)));
-          setFilteredUserIds(ids);
-        })
-        .catch(() => setFilteredUserIds(null));
-    } else if (tagCategoryFilter === 'CUSTOM') {
-      // Find users matching custom tags
-      const customLabels = availableTags.filter((t) => t.category === 'CUSTOM').map((t) => t.label);
-      if (customLabels.length === 0) {
-        setFilteredUserIds(new Set());
-      } else {
-        Promise.all(customLabels.map((l) => searchUsersApi(l, false, true)))
-          .then((batches) => {
-            const ids = new Set<string>();
-            batches.forEach((batch) => batch.forEach((u) => ids.add(u.id)));
-            setFilteredUserIds(ids);
-          })
-          .catch(() => setFilteredUserIds(null));
-      }
-    }
-  }, [selectedTag, tagCategoryFilter, availableTags]);
 
   const graphWrapperRef = useCallback((node: HTMLDivElement | null) => {
     graphResizeObserverRef.current?.disconnect();
@@ -193,51 +139,52 @@ export const GraphContainer = ({
 
   return (
     <div ref={graphWrapperRef} style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#121214' }}>
-      {/* 100% Viewport Canvas */}
-      <ForceGraph2D<Node, LinkExtra>
-        ref={fgRef}
-        width={graphSize.width}
-        height={graphSize.height}
-        graphData={c.graphData}
-        backgroundColor="#121214"
-        enableNodeDrag={false}
-        warmupTicks={50}
-        cooldownTicks={100}
-        d3VelocityDecay={0.4}
-        onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
-        nodeCanvasObject={(node, ctx, globalScale) =>
-          drawNode(node, ctx, globalScale, {
-            currentUserId: currentUser.id,
-            distanceFromMe: c.distanceFromMe,
-            highlightNodes: c.highlightNodes,
-            activePath: c.activePath,
-            maxDistance: c.maxDistance,
-            filterNodes: filteredUserIds,
-          })
-        }
-        linkColor={(link) =>
-          linkColorFor(link as GLink, {
-            highlightLinks: c.highlightLinks,
-            activePath: c.activePath,
-            maxDistance: c.maxDistance,
-            distanceFromMe: c.distanceFromMe,
-            filterNodes: filteredUserIds,
-          })
-        }
-        linkLineDash={(link) => linkLineDashFor(link as GLink)}
-        nodePointerAreaPaint={paintNodePointerArea}
-        linkCanvasObjectMode={() => 'after'}
-        linkCanvasObject={(link, ctx, globalScale) =>
-          drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
-        }
-        onNodeClick={(node) => c.selectNode(String(node.id))}
-        onBackgroundClick={() => {
-          c.clearSelection();
-          setShowNotifications(false);
-          setShowSettings(false);
-          setShowTagFilter(false);
-        }}
-      />
+      {/* 100% Viewport Canvas, hidden until laid out and centered */}
+      <div style={{ visibility: graphReady ? 'visible' : 'hidden' }}>
+        <ForceGraph2D<Node, LinkExtra>
+          ref={fgRef}
+          width={graphSize.width}
+          height={graphSize.height}
+          graphData={c.graphData}
+          backgroundColor="#121214"
+          enableNodeDrag={false}
+          {...STATIC_LAYOUT}
+          d3VelocityDecay={0.4}
+          onEngineStop={handleEngineStop}
+          onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
+          nodeCanvasObject={(node, ctx, globalScale) =>
+            drawNode(node, ctx, globalScale, {
+              currentUserId: currentUser.id,
+              distanceFromMe: c.distanceFromMe,
+              highlightNodes: c.highlightNodes,
+              activePath: c.activePath,
+              maxDistance: c.maxDistance,
+              filterNodes: c.tagMatchIds,
+            })
+          }
+          linkColor={(link) =>
+            linkColorFor(link as GLink, {
+              highlightLinks: c.highlightLinks,
+              activePath: c.activePath,
+              maxDistance: c.maxDistance,
+              distanceFromMe: c.distanceFromMe,
+              filterNodes: c.tagMatchIds,
+            })
+          }
+          linkLineDash={(link) => linkLineDashFor(link as GLink)}
+          nodePointerAreaPaint={paintNodePointerArea}
+          linkCanvasObjectMode={() => 'after'}
+          linkCanvasObject={(link, ctx, globalScale) =>
+            drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
+          }
+          onNodeClick={(node) => c.selectNode(String(node.id))}
+          onBackgroundClick={() => {
+            c.clearSelection();
+            setShowNotifications(false);
+            setShowSettings(false);
+          }}
+        />
+      </div>
 
       {/* Floating Top Bar */}
       <header
@@ -309,51 +256,66 @@ export const GraphContainer = ({
           </div>
         )}
 
-        {/* Search Bar with Names & Tags checkboxes */}
-        <div style={{ ...floatingPanelStyle, pointerEvents: 'auto', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '10px', position: 'relative', minWidth: '320px', maxWidth: '480px', flex: '1 1 auto' }}>
-          <SearchIcon size={18} color="#9a9a9a" />
-          <input
-            type="text"
-            placeholder="Search network..."
-            value={c.searchTerm}
-            onChange={(e) => {
-              c.setSearchTerm(e.target.value);
-              c.setShowSuggestions(true);
-            }}
-            onFocus={() => c.setShowSuggestions(true)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: '#f0f0f0',
-              fontSize: '14px',
-              flex: 1,
-              minWidth: '100px',
-            }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#9a9a9a', borderLeft: '1px solid #3a3a40', paddingLeft: '8px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={c.searchNames}
-                onChange={(e) => c.setSearchNames(e.target.checked)}
-                style={{ cursor: 'pointer', accentColor: '#3d8bff' }}
-              />
-              Names
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={c.searchTags}
-                onChange={(e) => c.setSearchTags(e.target.checked)}
-                style={{ cursor: 'pointer', accentColor: '#3d8bff' }}
-              />
-              Tags
-            </label>
-          </div>
+        {/* Search bar: one mode at a time. Tags mode swaps the text input for tag tokens and
+            opens the tag picker, whose width is capped at the bar's own width. */}
+        <div style={{ ...floatingPanelStyle, pointerEvents: 'auto', padding: '6px 8px 6px 12px', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', minWidth: '360px', maxWidth: '520px', flex: '1 1 auto', fontSize: '14px' }}>
+          <SearchIcon size={18} color="#9a9a9a" style={{ flexShrink: 0 }} />
+          {c.searchMode === 'tags' ? (
+            <TagQueryField
+              ref={tagQueryRef}
+              criteria={c.tagCriteria}
+              onChange={c.setTagCriteria}
+              matchCount={c.tagMatchIds ? c.tagMatchIds.size : null}
+              loading={c.searchLoading}
+              rows={pickerRows('regular', false)}
+              layout="dropdown"
+              placeholder={SEARCH_PLACEHOLDERS.tags}
+              inputStyle={{ fontSize: '14px' }}
+            >
+              {c.searchMatches.length > 0 && (
+                <div style={{ marginTop: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {c.searchMatches.slice(0, 20).map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => {
+                        c.handleSelectSearchResult(u.id);
+                        tagQueryRef.current?.close();
+                      }}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 4px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#f0f0f0', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      {fullName(u)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </TagQueryField>
+          ) : (
+            <input
+              type="text"
+              placeholder={SEARCH_PLACEHOLDERS[c.searchMode]}
+              value={c.searchTerm}
+              onChange={(e) => {
+                c.setSearchTerm(e.target.value);
+                c.setShowSuggestions(true);
+              }}
+              onFocus={() => c.setShowSuggestions(true)}
+              onBlur={() => c.setShowSuggestions(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#f0f0f0',
+                fontSize: '14px',
+                flex: 1,
+                minWidth: '100px',
+              }}
+            />
+          )}
+          <SearchModeToggle mode={c.searchMode} onChange={c.setSearchMode} />
 
-          {/* Search suggestions dropdown */}
-          {c.showSuggestions && c.searchMatches.length > 0 && (
+          {/* People suggestions for the text modes */}
+          {c.searchMode !== 'tags' && c.showSuggestions && c.searchMatches.length > 0 && (
             <div
               onMouseDown={(e) => e.preventDefault()}
               style={{
@@ -373,6 +335,7 @@ export const GraphContainer = ({
                   type="button"
                   onClick={() => {
                     c.handleSelectSearchResult(u.id);
+                    c.setShowSuggestions(false);
                   }}
                   style={{
                     display: 'flex',
@@ -393,123 +356,6 @@ export const GraphContainer = ({
                   {u.phoneNumber && <span style={{ color: '#9a9a9a', fontSize: '11px' }}>{formatPhoneNumberDisplay(u.phoneNumber)}</span>}
                 </button>
               ))}
-            </div>
-          )}
-        </div>
-
-        {/* Tag Filter Button */}
-        <div style={{ pointerEvents: 'auto', position: 'relative' }}>
-          <button
-            onClick={() => {
-              setShowTagFilter((prev) => !prev);
-              setShowNotifications(false);
-              setShowSettings(false);
-            }}
-            style={{
-              ...floatingPanelStyle,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 12px',
-              fontSize: '13px',
-              cursor: 'pointer',
-              color: selectedTag || tagCategoryFilter !== 'ALL' ? '#6ab0ff' : '#f0f0f0',
-              borderColor: selectedTag || tagCategoryFilter !== 'ALL' ? '#3d8bff' : '#3a3a40',
-            }}
-          >
-            <TagIcon size={16} />
-            <span>
-              {selectedTag
-                ? `Tag: ${selectedTag}`
-                : tagCategoryFilter === 'GLOBAL'
-                ? 'Global Tags'
-                : tagCategoryFilter === 'CUSTOM'
-                ? 'Custom Tags'
-                : 'All Tags'}
-            </span>
-          </button>
-
-          {showTagFilter && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                left: 0,
-                width: '260px',
-                ...floatingPanelStyle,
-                padding: '12px',
-                zIndex: 30,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#9a9a9a', textTransform: 'uppercase' }}>Filter Tags</span>
-                {(selectedTag || tagCategoryFilter !== 'ALL') && (
-                  <button
-                    onClick={() => {
-                      setSelectedTag(null);
-                      setTagCategoryFilter('ALL');
-                    }}
-                    style={{ background: 'none', border: 'none', color: '#ff6b6b', fontSize: '11px', cursor: 'pointer' }}
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-
-              {/* Category tabs */}
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
-                {(['ALL', 'GLOBAL', 'CUSTOM'] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setTagCategoryFilter(cat);
-                      setSelectedTag(null);
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      fontSize: '11px',
-                      borderRadius: '4px',
-                      border: '1px solid #3a3a40',
-                      background: tagCategoryFilter === cat ? '#2a3f5f' : 'transparent',
-                      color: tagCategoryFilter === cat ? '#fff' : '#9a9a9a',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {cat === 'ALL' ? 'All' : cat === 'GLOBAL' ? 'Global' : 'Custom'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tag list */}
-              <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {availableTags
-                  .filter((t) => tagCategoryFilter === 'ALL' || (tagCategoryFilter === 'GLOBAL' ? t.category !== 'CUSTOM' : t.category === 'CUSTOM'))
-                  .map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setSelectedTag(selectedTag === t.label ? null : t.label);
-                        setShowTagFilter(false);
-                      }}
-                      style={{
-                        padding: '6px 8px',
-                        borderRadius: '6px',
-                        border: selectedTag === t.label ? '1px solid #3d8bff' : '1px solid transparent',
-                        background: selectedTag === t.label ? 'rgba(61, 139, 255, 0.15)' : 'transparent',
-                        color: selectedTag === t.label ? '#6ab0ff' : '#f0f0f0',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>{t.label}</span>
-                      <span style={{ color: '#6a6a70', fontSize: '10px' }}>{t.category}</span>
-                    </button>
-                  ))}
-              </div>
             </div>
           )}
         </div>
@@ -554,8 +400,7 @@ export const GraphContainer = ({
             onClick={() => {
               setShowNotifications((prev) => !prev);
               setShowSettings(false);
-              setShowTagFilter(false);
-            }}
+                }}
             aria-label="Notifications"
             style={{
               ...hudBtnStyle,
@@ -853,8 +698,7 @@ export const GraphContainer = ({
             onClick={() => {
               setShowSettings((prev) => !prev);
               setShowNotifications(false);
-              setShowTagFilter(false);
-            }}
+                }}
             aria-label="Settings"
             style={{
               ...hudBtnStyle,
@@ -998,25 +842,12 @@ export const GraphContainer = ({
                 )}
               </div>
 
-              {/* Auto-update graph setting & refresh button */}
+              {/* Manual refresh: the graph never updates in the background */}
               <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px', marginBottom: '14px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                  <input
-                    type="checkbox"
-                    checked={c.autoApplyUpdates}
-                    onChange={(e) => c.setAutoApplyUpdates(e.target.checked)}
-                    style={{ accentColor: '#3d8bff', width: 16, height: 16 }}
-                  />
-                  <span>Auto-apply network updates</span>
-                </label>
-                <p style={{ fontSize: '11px', color: '#9a9a9a', margin: '4px 0 0 24px' }}>
-                  When off, shows a notification banner to refresh the graph.
-                </p>
                 <button
                   type="button"
-                  onClick={() => c.handleRefreshGraph()}
+                  onClick={() => c.loadData()}
                   style={{
-                    marginTop: '10px',
                     width: '100%',
                     padding: '6px 10px',
                     background: 'rgba(61, 139, 255, 0.12)',
@@ -1061,64 +892,6 @@ export const GraphContainer = ({
           )}
         </div>
       </header>
-
-      {/* Graph Update Notification Banner */}
-      {c.hasGraphUpdate && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 72,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            ...floatingPanelStyle,
-            borderColor: '#3d8bff',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(61, 139, 255, 0.3)',
-            padding: '8px 16px',
-            zIndex: 40,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-          }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3d8bff', display: 'inline-block', boxShadow: '0 0 6px #3d8bff', flexShrink: 0 }} />
-          <span>Graph has been updated, </span>
-          <button
-            type="button"
-            onClick={c.handleRefreshGraph}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#6ab0ff',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              fontWeight: 600,
-              padding: 0,
-              fontSize: '13px',
-            }}
-          >
-            refresh
-          </button>
-          <button
-            type="button"
-            onClick={c.dismissGraphUpdate}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#9a9a9a',
-              cursor: 'pointer',
-              fontSize: '14px',
-              padding: '0 0 0 4px',
-              display: 'flex',
-              alignItems: 'center',
-              lineHeight: 1,
-            }}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Floating Action Error Toast */}
       {c.actionError && (
@@ -1186,6 +959,8 @@ export const GraphContainer = ({
             onSelectNode={(nodeId: string) => c.focusUser(nodeId)}
             isCurrentUser={c.selectedUser.id === currentUser.id}
             onBioUpdated={(newBio) => c.handleBioUpdated(c.selectedUser!.id, newBio)}
+            onTagsChange={(update) => c.updateUserTags(c.selectedUser!.id, update)}
+            onNoteChange={(note) => c.updateUserNote(c.selectedUser!.id, note)}
             style={{ background: 'transparent', border: 'none' }}
           />
         </DraggableCard>
@@ -1214,7 +989,7 @@ export const GraphContainer = ({
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {c.pathBreadcrumb.map((hop, index) => (
+              {c.pathBreadcrumb.map((hop) => (
                 <button
                   key={hop.id}
                   onClick={() => c.focusUser(hop.id)}
@@ -1229,7 +1004,7 @@ export const GraphContainer = ({
                     fontSize: '13px',
                   }}
                 >
-                  {index === 0 ? `Start: ${fullName(hop)}` : index === c.pathBreadcrumb.length - 1 ? `Target: ${fullName(hop)}` : `${index}. ${fullName(hop)}`}
+                  {`${fullName(hop)}`}
                 </button>
               ))}
             </div>
@@ -1318,11 +1093,11 @@ export const GraphContainer = ({
             color: c.maxDistance !== Infinity ? '#6ab0ff' : '#f0f0f0',
           }}
         >
-          <SlidersIcon size={18} />
+          <SlidersIcon size={18} color="#6ab0ff" />
         </button>
 
-        <button onClick={c.handleLocateMe} title="Locate Me" style={hudBtnStyle}>
-          <TargetIcon size={18} />
+        <button onClick={() => c.handleLocateMe()} title="Locate Me" style={hudBtnStyle}>
+          <TargetIcon size={18} color="#6ab0ff" />
         </button>
 
         <button onClick={() => c.handleZoomStep(ZOOM_STEP_FACTOR)} title="Zoom In" style={hudBtnStyle}>

@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import type { TagAssignment } from './tagService';
 
 export interface User {
   id: string;
@@ -11,6 +12,10 @@ export interface User {
   maxConnectionDegree?: number | null;
   defaultUser?: boolean;
   createdAt?: string;
+  // What you may see on this person, loaded with the directory. null on the stored session user.
+  tags?: TagAssignment[] | null;
+  // Your private note on this person, loaded with the directory. "" (empty) if none. null if not loaded.
+  note?: string | null;
 }
 
 export interface Node {
@@ -109,10 +114,28 @@ export interface SearchHit {
   connections: User[];
 }
 
-export const searchUsersApi = async (query: string, searchNames = true, searchTags = true): Promise<User[]> => {
-  const response = await apiClient.get<SearchHit[]>(`${API_URL}/search`, {
-    params: { q: query, searchNames, searchTags }
-  });
+export type SearchMode = 'names' | 'tags' | 'bios' | 'notes';
+
+// Tags-mode criteria: tree nodes (matching everything beneath them) and free-text labels.
+export interface TagCriteria {
+  tagIds: string[];
+  labels: string[];
+  matchAll: boolean;
+}
+
+export const searchUsersApi = async (
+  mode: SearchMode,
+  query: string,
+  criteria?: TagCriteria
+): Promise<User[]> => {
+  const params = new URLSearchParams({ mode: mode.toUpperCase(), q: query });
+  if (mode === 'tags' && criteria) {
+    criteria.tagIds.forEach((id) => params.append('tagIds', id));
+    // Spring splits a lone comma-separated value into a list, so commas can't survive in a label.
+    criteria.labels.forEach((label) => params.append('labels', label.replace(/,/g, ' ')));
+    params.set('matchAll', String(criteria.matchAll));
+  }
+  const response = await apiClient.get<SearchHit[]>(`${API_URL}/search`, { params });
   return response.data.map((hit) => hit.user);
 };
 

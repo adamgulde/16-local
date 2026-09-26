@@ -1,0 +1,31 @@
+Tagging System Overhaul:
+
+1. Tag all users in the testing environment with a random assortment of tags (self-assigned, not assigned by the logged in-user, e.g. privage), so that testing is easily facilitated. Do not 
+
+2. Tags should have these main categories (mutually exclusive, with distinct colors): 
+- Age Range (18-29, 30-39, 40-49, 50-59, 60-69, 70+)
+- Education (with subcategories) 
+-- Major / Minor
+-- etc.
+- Organizations (with subcategories) 
+-- Clubs (Collegiate) 
+-- Professional
+-- etc. 
+- Profession
+- Personal Interests (with subcategories) 
+-- Music
+-- Animals
+-- Artificial Intelligence
+-- etc. 
+- Geography
+- Nationality
+- Language
+- Interest Groups (Gender (Male, Female, Nonbinary) Religion, Spirituality, Race, Ethnicity, Culture)
+
+The categories have a specific icon (not emoji) associated with the tag chip, but are not tags themselves. There should be a 3 color palette for user-assigned tags, custom tags, and private tags (where private tags can be custom, but share the same color as private)   
+
+3. The UI design of the tags need to be corrected entirely, according to the following steps: 
+a. Remove the checkboxes to search users by tags / names, and replace with a radio selection for names/tags/bios/notes. The search feature should then search based on users with content matching any of those info, where bios corresponds with the user-generated biography they wrote for themselves, and notes corresponds with the assigned private notes the logged-in user established for that user. 
+b. For the tag search, it should autopopulate as users type, but there should also be an option to select a category (defined in 2., and this displays the list of subcategory tag options (and arrow indicators for subcategories that have more subcategories), but the list is limited to fit reasonably sized (for both mobile and desktop versions, e.g. only up to 7 lines of tags, vertically stacked should be on the screen without scrolling, and fewer on mobile. But when the category is chosen, tags should also populate left-to-right, following the 7 line rule, but the area they are populating should never extend past the search box x-direction width to keep the UI clean. The category chips should be mutually exclusive when selecting, so the tags do not overflow the area. 
+c. For personally tagging a user in their info card, it should use a compacted version of the tag search, with all the same functionality. 
+d. Overall, tags should be smaller in font and size than they are currently. 

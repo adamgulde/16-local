@@ -7,12 +7,11 @@ import java.util.UUID;
 
 /**
  * Records that {@code tagger} applied a tag to {@code subject} — either a dictionary
- * {@link Tag} or a private free-text {@code customLabel}, never both.
+ * {@link Tag} or a free-text {@code customLabel} filed under {@code parentTag}, never both.
  *
- * <p>{@code tagger.equals(subject)} is a self-tag: public, dictionary-only (enforced in
- * {@code TagService}, never trusted from the client). Any other tagger is a private
- * annotation, visible only to that tagger — the same visibility rule as {@link UserNote} —
- * and may use either a dictionary tag or a custom label.
+ * <p>{@code tagger.equals(subject)} is a self-tag: public, whether dictionary or custom (custom
+ * self-tags must sit under a category). Any other tagger is a private annotation, visible only to
+ * that tagger — the same visibility rule as {@link UserNote}. All rules live in {@code TagService}.
  */
 @Entity
 @Table(name = "user_tags", uniqueConstraints = @UniqueConstraint(columnNames = {"tagger_id", "subject_id", "tag_id"}))
@@ -40,6 +39,13 @@ public class UserTag {
     @ManyToOne
     @JoinColumn(name = "tag_id")
     private Tag tag;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_tag_id")
+    private Tag parentTag;
+
+    /** Legacy free-text category, kept only for assignments migrated off retired dictionary tags. */
+    private String customCategory;
 
     private String customLabel;
 }

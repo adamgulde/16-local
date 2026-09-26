@@ -10,6 +10,10 @@ import java.util.UUID;
  * Public-facing view of a User. phoneNumber is null unless the caller is
  * allowed to see it (self, or an existing connection) — decided server-side
  * by the caller of {@link #from}, never by a client-supplied flag.
+ * tags are what the caller may see on this user (public self-tags plus the
+ * caller's own private tags) and note is the caller's own private note on them
+ * ("" if none). Both are null where they aren't loaded (auth responses, which
+ * the client keeps as a long-lived session snapshot).
  */
 public record UserResponse(
         UUID id,
@@ -21,9 +25,16 @@ public record UserResponse(
         String inviteCode,
         Integer maxConnectionDegree,
         Boolean defaultUser,
-        Instant createdAt
+        Instant createdAt,
+        List<TagAssignmentResponse> tags,
+        String note
 ) {
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber) {
+        return from(user, relationships, includePhoneNumber, null, null);
+    }
+
+    public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber,
+                                    List<TagAssignmentResponse> tags, String note) {
         return new UserResponse(
                 user.getId(),
                 user.getFirstName(),
@@ -34,7 +45,9 @@ public record UserResponse(
                 user.getInviteCode(),
                 user.getMaxConnectionDegree(),
                 user.isDefaultUser(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                tags,
+                note
         );
     }
 }

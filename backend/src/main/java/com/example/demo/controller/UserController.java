@@ -2,6 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.dto.FriendSummaryResponse;
 import com.example.demo.dto.ReachResponse;
+import com.example.demo.dto.SearchMode;
 import com.example.demo.dto.SearchResult;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.exception.BadRequestException;
@@ -30,13 +31,20 @@ public class UserController {
         return userService.getAllUsers(requestingUserId);
     }
 
+    /**
+     * One mode at a time: names, bios, the caller's own notes, or tags. In TAGS mode pass tree
+     * nodes as repeated {@code tagIds} and free text as repeated {@code labels}; {@code matchAll}
+     * picks AND (default) vs OR across them.
+     */
     @GetMapping("/search")
     public List<SearchResult> searchUsers(
-            @RequestParam String q,
-            @RequestParam(required = false, defaultValue = "true") boolean searchNames,
-            @RequestParam(required = false, defaultValue = "true") boolean searchTags,
+            @RequestParam(required = false, defaultValue = "") String q,
+            @RequestParam(required = false, defaultValue = "NAMES") SearchMode mode,
+            @RequestParam(required = false) List<UUID> tagIds,
+            @RequestParam(required = false) List<String> labels,
+            @RequestParam(required = false, defaultValue = "true") boolean matchAll,
             @AuthenticationPrincipal UUID requestingUserId) {
-        return userService.searchUsers(q, searchNames, searchTags, requestingUserId);
+        return userService.searchUsers(mode, q, tagIds, labels, matchAll, requestingUserId);
     }
 
     @GetMapping("/{id}")

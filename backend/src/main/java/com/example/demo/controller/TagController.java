@@ -18,7 +18,7 @@ public class TagController {
 
     private final TagService tagService;
 
-    /** The global tag dictionary — the menu self-tagging (and tagging others) draws from. */
+    /** The whole tag tree, depth-first — the menu self-tagging (and tagging others) draws from. */
     @GetMapping("/api/tags")
     public List<TagResponse> getAllTags() {
         return tagService.getAllTags();
@@ -30,10 +30,15 @@ public class TagController {
         return tagService.getTagsForSubject(id, viewerId);
     }
 
+    /**
+     * Returns the subject's tags as the caller now sees them, not just the new one: picking in a
+     * single-select group (age range, gender) also removes the previous pick.
+     */
     @PostMapping("/api/users/{id}/tags")
-    public TagAssignmentResponse addTag(@PathVariable UUID id, @RequestBody AddTagRequest request,
-                                         @AuthenticationPrincipal UUID taggerId) {
-        return tagService.addTag(id, taggerId, request.tagId(), request.customLabel());
+    public List<TagAssignmentResponse> addTag(@PathVariable UUID id, @RequestBody AddTagRequest request,
+                                               @AuthenticationPrincipal UUID taggerId) {
+        tagService.addTag(id, taggerId, request.tagId(), request.customLabel(), request.parentTagId());
+        return tagService.getTagsForSubject(id, taggerId);
     }
 
     @DeleteMapping("/api/users/{id}/tags/{assignmentId}")

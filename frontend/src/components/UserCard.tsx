@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import type { User } from '../services/userService';
+import type { TagsUpdate } from '../services/tagService';
 import { fullName } from '../services/userService';
 import { BioSection } from './BioSection';
 import { TagsAndNotes } from './TagsAndNotes';
@@ -26,6 +27,10 @@ interface UserCardProps {
   onSelectNode: (nodeId: string) => void;
   isCurrentUser: boolean;
   onBioUpdated?: (newBio: string) => void;
+  // From views that load everyone's tags with the directory and keep user.tags current.
+  onTagsChange?: (update: TagsUpdate) => void;
+  // From views that preload notes with the directory.
+  onNoteChange?: (note: string) => void;
   compact?: boolean;
   style?: CSSProperties;
 }
@@ -66,6 +71,8 @@ export const UserCard = ({
   onSelectNode,
   isCurrentUser,
   onBioUpdated,
+  onTagsChange,
+  onNoteChange,
   compact = false,
   style,
 }: UserCardProps) => {
@@ -209,7 +216,14 @@ export const UserCard = ({
 
       <hr style={dividerStyle} />
 
-      <TagsAndNotes subjectId={user.id} isCurrentUser={isCurrentUser} />
+      <TagsAndNotes
+        subjectId={user.id}
+        isCurrentUser={isCurrentUser}
+        tags={user.tags}
+        onTagsChange={onTagsChange}
+        note={user.note}
+        onNoteChange={onNoteChange}
+      />
 
       <hr style={dividerStyle} />
 

@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { User, FriendSummary } from '../../services/userService';
-import { fullName, searchUsersApi, disconnectUser } from '../../services/userService';
+import { fullName, disconnectUser, type SearchMode, type TagCriteria } from '../../services/userService';
+import { EMPTY_TAG_CRITERIA, useUserSearch } from '../../hooks/useUserSearch';
+import { SearchModeToggle } from '../tags/SearchModeToggle';
+import { SEARCH_PLACEHOLDERS } from '../tags/searchModes';
+import { TagQueryField } from '../tags/TagQueryField';
+import { pickerRows } from '../tags/tagTheme';
 import { sendRequest, fetchMyRequests, acceptRequest } from '../../services/requestService';
 import { getSafeErrorMessage } from '../../services/apiClient';
 import type { ConnectionRequest } from '../../services/types';
@@ -42,7 +47,6 @@ export const MillerColumnsView = ({
 
   // Global search inside Miller view
   const [globalSearch, setGlobalSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
   // Requests state for pending requests check
@@ -78,19 +82,11 @@ export const MillerColumnsView = ({
     loadRequests();
   }, [loadRequests]);
 
-  // Search network
-  useEffect(() => {
-    if (!globalSearch.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      searchUsersApi(globalSearch.trim(), true, true)
-        .then((res) => setSearchResults(res))
-        .catch(() => {});
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [globalSearch]);
+  // Search network — one mode at a time, same as the graph views.
+  const [searchMode, setSearchMode] = useState<SearchMode>('names');
+  const [tagCriteria, setTagCriteria] = useState<TagCriteria>(EMPTY_TAG_CRITERIA);
+  const search = useUserSearch(searchMode, globalSearch, tagCriteria);
+  const searchResults = searchMode === 'tags' ? search.results : search.results.slice(0, 20);
 
   // Helper to get pending request for a user
   const isRequestPending = useCallback(
@@ -382,8 +378,8 @@ export const MillerColumnsView = ({
         <div
           style={{
             position: 'relative',
-            flex: '0 1 360px',
-            minWidth: isMobile ? 120 : 220,
+            flex: isMobile ? '1 1 auto' : '0 1 520px',
+            minWidth: isMobile ? 120 : 320,
           }}
         >
           <div
@@ -397,26 +393,58 @@ export const MillerColumnsView = ({
               gap: '8px',
             }}
           >
-            <SearchIcon size={15} color="#9a9a9a" />
-            <input
-              type="text"
-              placeholder="Search people..."
-              value={globalSearch}
-              onChange={(e) => {
-                setGlobalSearch(e.target.value);
-                setShowSearchResults(true);
-              }}
-              onFocus={() => setShowSearchResults(true)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: '#fff',
-                fontSize: '13px',
-                width: '100%',
-              }}
-            />
-            {globalSearch && (
+            <SearchIcon size={15} color="#9a9a9a" style={{ flexShrink: 0 }} />
+            {searchMode === 'tags' ? (
+              <TagQueryField
+                criteria={tagCriteria}
+                onChange={setTagCriteria}
+                matchCount={search.active ? search.results.length : null}
+                loading={search.loading}
+                rows={pickerRows('regular', isMobile)}
+                layout="dropdown"
+                placeholder={SEARCH_PLACEHOLDERS.tags}
+                inputStyle={{ fontSize: '13px' }}
+                dropdownStyle={{ zIndex: 40 }}
+                header={isMobile ? <SearchModeToggle mode={searchMode} onChange={setSearchMode} /> : undefined}
+              >
+                {searchResults.length > 0 && (
+                  <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                    {searchResults.map((user) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => handleInspectUser(user)}
+                        style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '6px 4px', background: 'none', border: 'none', borderBottom: '1px solid #2c2c2e', color: '#f0f0f0', fontSize: '12px', cursor: 'pointer' }}
+                      >
+                        <span>{fullName(user)}</span>
+                        <span style={{ fontSize: '11px', color: '#6ab0ff' }}>Inspect →</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </TagQueryField>
+            ) : (
+              <input
+                type="text"
+                placeholder={isMobile ? 'Search…' : SEARCH_PLACEHOLDERS[searchMode]}
+                value={globalSearch}
+                onChange={(e) => {
+                  setGlobalSearch(e.target.value);
+                  setShowSearchResults(true);
+                }}
+                onFocus={() => setShowSearchResults(true)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#fff',
+                  fontSize: '13px',
+                  width: '100%',
+                }}
+              />
+            )}
+            {!isMobile && <SearchModeToggle mode={searchMode} onChange={setSearchMode} />}
+            {searchMode !== 'tags' && globalSearch && (
               <button
                 type="button"
                 onClick={() => {
@@ -431,7 +459,7 @@ export const MillerColumnsView = ({
           </div>
 
           {/* Search Dropdown */}
-          {showSearchResults && searchResults.length > 0 && (
+          {searchMode !== 'tags' && showSearchResults && (searchResults.length > 0 || isMobile) && (
             <div
               onMouseDown={(e) => e.preventDefault()}
               style={{
@@ -448,6 +476,11 @@ export const MillerColumnsView = ({
                 zIndex: 40,
               }}
             >
+              {isMobile && (
+                <div style={{ padding: '8px', borderBottom: '1px solid #2c2c2e' }}>
+                  <SearchModeToggle mode={searchMode} onChange={setSearchMode} />
+                </div>
+              )}
               {searchResults.map((user) => (
                 <div
                   key={user.id}

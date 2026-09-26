@@ -1,0 +1,474 @@
+# Curated tag taxonomy — source of truth for the tag dictionary migration.
+#
+# Format: two-space indentation per level. Top-level lines are categories (never tags themselves);
+# every deeper line is a selectable tag, and a tag with children shows a "›" drill-in in the picker.
+# Optional flags in {braces} after a label:
+#   icon=<name>  category icon key (top level only; the frontend maps it to an SVG icon)
+#   self         self-only: users may apply it to themselves, nobody may apply it to someone else
+#   single       at most one of this node's descendants per user (e.g. one age range)
+# IDs are derived from the full path, so renaming a tag changes its id — edit labels deliberately.
+# Regenerate SQL: python3 backend/scripts/taxonomy/generate_migration.py
+
+Age Range {icon=calendar, self, single}
+  18–29
+  30–39
+  40–49
+  50–59
+  60–69
+  70+
+
+Education {icon=graduation}
+  Degree
+    High School
+    Associate's
+    Bachelor's
+    Master's
+    MBA
+    PhD
+    MD / DO
+    JD
+    Trade / Vocational
+    Bootcamp / Certificate
+  Major / Minor
+    Computer & Data
+      Computer Science
+      Data Science
+      Information Systems
+      Cybersecurity
+    Engineering
+      Mechanical Engineering
+      Electrical Engineering
+      Civil Engineering
+      Chemical Engineering
+      Aerospace Engineering
+      Biomedical Engineering
+      Industrial Engineering
+    Natural Sciences & Math
+      Mathematics
+      Statistics
+      Physics
+      Chemistry
+      Biology
+      Neuroscience
+      Environmental Science
+    Business
+      Finance
+      Accounting
+      Marketing
+      Management
+      Economics
+      Entrepreneurship
+      Supply Chain
+    Social Sciences
+      Psychology
+      Sociology
+      Political Science
+      Anthropology
+      International Relations
+      Public Policy
+    Humanities
+      English
+      History
+      Philosophy
+      Linguistics
+      Classics
+      Religious Studies
+      Foreign Languages
+    Arts & Design
+      Fine Arts
+      Music
+      Theater
+      Film
+      Graphic Design
+      Architecture
+      Creative Writing
+    Health
+      Nursing
+      Pre-Med
+      Public Health
+      Pharmacy
+      Kinesiology
+      Nutrition
+    Communications
+      Journalism
+      Communications
+      Media Studies
+    Education
+      Elementary Education
+      Secondary Education
+      Special Education
+  Student Status
+    Current Student
+    Graduate Student
+    Recent Graduate
+    Alumni
+
+Organizations {icon=building}
+  Clubs (Collegiate)
+    Fraternity
+    Sorority
+    Student Government
+    Club Sports
+    Honor Society
+    Cultural Club
+    Professional Club
+    Debate / Model UN
+    Performing Arts
+    Service / Volunteering
+    Student Media
+  Professional
+    Industry Association
+    Professional Society
+    Labor Union
+    Chamber of Commerce
+    Toastmasters
+    Rotary / Lions Club
+  Community & Volunteer
+    Nonprofit Volunteer
+    Mentorship Program
+    Neighborhood Association
+    Mutual Aid
+  Military & Service
+    Active Duty
+    Veteran
+    Reserve / National Guard
+    AmeriCorps / Peace Corps
+  Sports & Recreation
+    Rec League
+    Running Club
+    Climbing Gym
+    Cycling Club
+
+Profession {icon=briefcase}
+  Technology
+    Software Engineer
+    Data Scientist
+    ML / AI Engineer
+    Product Manager
+    UI / UX Designer
+    DevOps / SRE
+    IT / Sysadmin
+    Security Engineer
+    QA / Test Engineer
+  Business & Finance
+    Accountant
+    Financial Analyst
+    Investment Banking
+    Consultant
+    Sales
+    Marketing
+    Operations
+    HR / Recruiting
+    Founder / Entrepreneur
+  Healthcare
+    Physician
+    Nurse
+    Pharmacist
+    Dentist
+    Therapist / Counselor
+    Physical Therapist
+    EMT / Paramedic
+    Medical Researcher
+  Education
+    K-12 Teacher
+    Professor
+    Tutor
+    School Administrator
+  Law & Government
+    Lawyer
+    Paralegal
+    Policy Analyst
+    Public Servant
+    Law Enforcement
+  Creative & Media
+    Artist
+    Writer
+    Journalist
+    Photographer
+    Musician
+    Filmmaker
+    Content Creator
+  Science & Engineering
+    Research Scientist
+    Lab Technician
+    Mechanical Engineer
+    Civil Engineer
+    Electrical Engineer
+  Trades & Services
+    Electrician
+    Plumber
+    Carpenter
+    Mechanic
+    Chef / Cook
+    Hospitality
+    Real Estate
+  Other
+    Student
+    Retired
+    Stay-at-Home Parent
+    Between Jobs
+
+Personal Interests {icon=heart}
+  Music
+    Rock
+    Pop
+    Hip-Hop
+    Jazz
+    Classical
+    Electronic
+    Country
+    R&B
+    Indie
+    Metal
+    Plays an Instrument
+    Singing
+    Live Concerts
+  Animals
+    Dogs
+    Cats
+    Horses
+    Birds
+    Wildlife
+    Animal Rescue
+  Artificial Intelligence
+    Machine Learning
+    LLMs
+    AI Ethics
+    Robotics
+    Computer Vision
+  Sports
+    Running
+    Soccer
+    Basketball
+    Football
+    Baseball
+    Tennis
+    Golf
+    Cycling
+    Swimming
+    Climbing
+    Yoga
+    Martial Arts
+    Hiking
+  Arts & Crafts
+    Painting
+    Drawing
+    Photography
+    Pottery
+    Knitting
+    Woodworking
+  Books & Writing
+    Fiction
+    Non-Fiction
+    Sci-Fi & Fantasy
+    Poetry
+    Book Club
+  Food & Drink
+    Cooking
+    Baking
+    Coffee
+    Wine
+    Craft Beer
+    Vegan / Vegetarian
+  Games
+    Video Games
+    Board Games
+    Chess
+    Tabletop RPGs
+    Esports
+  Film & TV
+    Movies
+    Anime
+    Documentaries
+  Outdoors & Travel
+    Camping
+    Backpacking
+    Travel
+    Fishing
+    Gardening
+  Technology
+    Startups
+    Open Source
+    Crypto / Web3
+    Gadgets
+    Programming
+  Science
+    Space
+    Physics
+    Biology
+    Psychology
+  Wellness
+    Fitness
+    Meditation
+    Nutrition
+    Mental Health
+  Causes
+    Environment
+    Education Access
+    Social Justice
+    Animal Welfare
+    Politics
+
+Geography {icon=pin}
+  North America
+    United States
+      Northeast
+      Southeast
+      Midwest
+      Southwest
+      West Coast
+      Pacific Northwest
+      Mountain West
+      Alaska / Hawaii
+    Canada
+    Mexico
+    Central America
+    Caribbean
+  South America
+    Brazil
+    Argentina
+    Colombia
+    Chile
+    Peru
+  Europe
+    United Kingdom
+    Ireland
+    France
+    Germany
+    Spain
+    Italy
+    Netherlands
+    Nordics
+    Eastern Europe
+  Asia
+    China
+    India
+    Japan
+    South Korea
+    Southeast Asia
+    Middle East
+  Africa
+    Nigeria
+    Kenya
+    South Africa
+    Egypt
+    Ghana
+    Ethiopia
+  Oceania
+    Australia
+    New Zealand
+    Pacific Islands
+
+Nationality {icon=flag, self}
+  American
+  Argentinian
+  Australian
+  Brazilian
+  British
+  Canadian
+  Chilean
+  Chinese
+  Colombian
+  Cuban
+  Dominican
+  Egyptian
+  Ethiopian
+  Filipino
+  French
+  German
+  Ghanaian
+  Greek
+  Indian
+  Indonesian
+  Iranian
+  Irish
+  Israeli
+  Italian
+  Jamaican
+  Japanese
+  Kenyan
+  Korean
+  Lebanese
+  Mexican
+  Nigerian
+  Pakistani
+  Polish
+  Portuguese
+  Puerto Rican
+  Russian
+  Salvadoran
+  South African
+  Spanish
+  Taiwanese
+  Turkish
+  Ukrainian
+  Venezuelan
+  Vietnamese
+
+Language {icon=language}
+  English
+  Spanish
+  Mandarin
+  Cantonese
+  Hindi
+  Arabic
+  French
+  Portuguese
+  Bengali
+  Russian
+  Japanese
+  German
+  Korean
+  Vietnamese
+  Italian
+  Turkish
+  Tagalog
+  Urdu
+  Persian
+  Polish
+  Dutch
+  Swahili
+  Greek
+  Hebrew
+  American Sign Language
+
+Interest Groups {icon=people, self}
+  Gender {single}
+    Male
+    Female
+    Nonbinary
+  Religion
+    Christian
+    Catholic
+    Protestant
+    Orthodox Christian
+    Muslim
+    Jewish
+    Hindu
+    Buddhist
+    Sikh
+    Latter-day Saint
+  Spirituality
+    Spiritual
+    Agnostic
+    Atheist
+    Exploring
+  Race
+    American Indian / Alaska Native
+    Asian
+    Black / African American
+    Native Hawaiian / Pacific Islander
+    White
+    Multiracial
+  Ethnicity
+    Hispanic / Latino
+    Middle Eastern / North African
+    South Asian
+    East Asian
+    Southeast Asian
+  Culture
+    First-Generation College
+    Immigrant
+    Child of Immigrants
+    Third Culture Kid
+    Multilingual Household

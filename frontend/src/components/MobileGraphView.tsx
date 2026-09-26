@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { fullName, searchUsersApi, formatRelativeTime } from '../services/userService';
+import { fullName, formatRelativeTime } from '../services/userService';
 import type { User, Node } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import {
@@ -11,6 +11,7 @@ import {
   linkLineDashFor,
   paintNodePointerArea,
   useGraphPhysics,
+  STATIC_LAYOUT,
 } from '../graph/rendering';
 import type { GNode, GLink, LinkExtra } from '../graph/rendering';
 import { UserCard } from './UserCard';
@@ -24,11 +25,13 @@ import {
   MinusIcon,
   MaximizeIcon,
   SlidersIcon,
-  TagIcon,
   ColumnsIcon,
   GridIcon,
 } from './Icons';
-import { fetchAllTags, type Tag } from '../services/tagService';
+import { SearchModeToggle } from './tags/SearchModeToggle';
+import { SEARCH_PLACEHOLDERS } from './tags/searchModes';
+import { TagQueryField } from './tags/TagQueryField';
+import { pickerRows } from './tags/tagTheme';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 
 interface MobileGraphViewProps {
@@ -39,7 +42,7 @@ interface MobileGraphViewProps {
 }
 
 
-type Sheet = 'card' | 'path' | 'notifications' | 'settings' | 'search' | 'tagFilter' | null;
+type Sheet = 'card' | 'path' | 'notifications' | 'settings' | 'search' | null;
 
 const ZOOM_STEP_FACTOR = 1.6;
 
@@ -110,26 +113,23 @@ export const MobileGraphView = ({
   const c = useGraphController(currentUser, fgRef);
   const hasOrientedRef = useRef(false);
 
-  useEffect(() => {
-    if (c.graphData.nodes.length > 0 && !hasOrientedRef.current) {
-      if (initialFocusUserId) {
-        hasOrientedRef.current = true;
-        c.handleSelectSearchResult(initialFocusUserId);
-      } else if (initialFindPathTargetId) {
-        hasOrientedRef.current = true;
-        c.handleFindPath(initialFindPathTargetId);
-      } else {
-        hasOrientedRef.current = true;
-        const timer = setTimeout(() => {
-          c.handleLocateMe();
-        }, 150);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [c.graphData.nodes, initialFocusUserId, initialFindPathTargetId, c.handleSelectSearchResult, c.handleFindPath, c.handleLocateMe]);
+  const [graphReady, setGraphReady] = useState(false);
+
+  // The engine first stops once the static layout is final (see STATIC_LAYOUT). Only then is the
+  // camera placed — instantly — and the canvas revealed, so nothing moves when the graph appears.
+  const handleEngineStop = () => {
+    if (hasOrientedRef.current) return;
+    hasOrientedRef.current = true;
+    if (initialFocusUserId) c.focusUser(initialFocusUserId, 0);
+    else if (initialFindPathTargetId) c.handleFindPath(initialFindPathTargetId);
+    else c.handleLocateMe(0);
+    setGraphReady(true);
+  };
 
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  // Starts at the viewport size (the root is fixed full-screen) so the instant initial centering
+  // happens on a real-sized canvas; a 0×0 one would pin the target to its top-left corner.
+  const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const rootRef = useCallback((node: HTMLDivElement | null) => {
     resizeObserverRef.current?.disconnect();
     if (!node) return;
@@ -147,51 +147,6 @@ export const MobileGraphView = ({
 
   const [activeSheet, setActiveSheet] = useState<Sheet>(null);
   const [showDistancePopup, setShowDistancePopup] = useState(false);
-
-  // Tag filter state for mobile
-  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [tagCategoryFilter, setTagCategoryFilter] = useState<'ALL' | 'GLOBAL' | 'CUSTOM'>('ALL');
-  const [filteredUserIds, setFilteredUserIds] = useState<Set<string> | null>(null);
-
-  useEffect(() => {
-    fetchAllTags().then(setAvailableTags).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!selectedTag && tagCategoryFilter === 'ALL') {
-      setFilteredUserIds(null);
-      return;
-    }
-
-    if (selectedTag) {
-      searchUsersApi(selectedTag, false, true)
-        .then((matched) => setFilteredUserIds(new Set(matched.map((u) => u.id))))
-        .catch(() => setFilteredUserIds(null));
-    } else if (tagCategoryFilter === 'GLOBAL') {
-      const globalLabels = availableTags.filter((t) => t.category !== 'CUSTOM').map((t) => t.label);
-      Promise.all(globalLabels.slice(0, 5).map((l) => searchUsersApi(l, false, true)))
-        .then((batches) => {
-          const ids = new Set<string>();
-          batches.forEach((batch) => batch.forEach((u) => ids.add(u.id)));
-          setFilteredUserIds(ids);
-        })
-        .catch(() => setFilteredUserIds(null));
-    } else if (tagCategoryFilter === 'CUSTOM') {
-      const customLabels = availableTags.filter((t) => t.category === 'CUSTOM').map((t) => t.label);
-      if (customLabels.length === 0) {
-        setFilteredUserIds(new Set());
-      } else {
-        Promise.all(customLabels.map((l) => searchUsersApi(l, false, true)))
-          .then((batches) => {
-            const ids = new Set<string>();
-            batches.forEach((batch) => batch.forEach((u) => ids.add(u.id)));
-            setFilteredUserIds(ids);
-          })
-          .catch(() => setFilteredUserIds(null));
-      }
-    }
-  }, [selectedTag, tagCategoryFilter, availableTags]);
 
   const selectAndShowCard = useCallback(
     (id: string) => {
@@ -264,48 +219,51 @@ export const MobileGraphView = ({
         userSelect: 'none',
       }}
     >
-      <ForceGraph2D<Node, LinkExtra>
-        ref={fgRef}
-        width={canvasSize.width}
-        height={canvasSize.height}
-        graphData={c.graphData}
-        backgroundColor="#121214"
-        enableNodeDrag={false}
-        warmupTicks={50}
-        cooldownTicks={100}
-        d3VelocityDecay={0.4}
-        onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
-        nodeCanvasObject={(node, ctx, globalScale) =>
-          drawNode(node, ctx, globalScale, {
-            currentUserId: currentUser.id,
-            distanceFromMe: c.distanceFromMe,
-            highlightNodes: c.highlightNodes,
-            activePath: c.activePath,
-            maxDistance: c.maxDistance,
-            filterNodes: filteredUserIds,
-          })
-        }
-        linkColor={(link) =>
-          linkColorFor(link as GLink, {
-            highlightLinks: c.highlightLinks,
-            activePath: c.activePath,
-            maxDistance: c.maxDistance,
-            distanceFromMe: c.distanceFromMe,
-            filterNodes: filteredUserIds,
-          })
-        }
-        linkLineDash={(link) => linkLineDashFor(link as GLink)}
-        nodePointerAreaPaint={paintNodePointerArea}
-        linkCanvasObjectMode={() => 'after'}
-        linkCanvasObject={(link, ctx, globalScale) =>
-          drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
-        }
-        onNodeClick={(node) => selectAndShowCard(String(node.id))}
-        onBackgroundClick={() => {
-          if (activeSheet === 'card') closeCardSheet();
-          setShowDistancePopup(false);
-        }}
-      />
+      {/* Hidden until laid out and centered */}
+      <div style={{ visibility: graphReady ? 'visible' : 'hidden' }}>
+        <ForceGraph2D<Node, LinkExtra>
+          ref={fgRef}
+          width={canvasSize.width}
+          height={canvasSize.height}
+          graphData={c.graphData}
+          backgroundColor="#121214"
+          enableNodeDrag={false}
+          {...STATIC_LAYOUT}
+          onEngineStop={handleEngineStop}
+          d3VelocityDecay={0.4}
+          onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
+          nodeCanvasObject={(node, ctx, globalScale) =>
+            drawNode(node, ctx, globalScale, {
+              currentUserId: currentUser.id,
+              distanceFromMe: c.distanceFromMe,
+              highlightNodes: c.highlightNodes,
+              activePath: c.activePath,
+              maxDistance: c.maxDistance,
+              filterNodes: c.tagMatchIds,
+            })
+          }
+          linkColor={(link) =>
+            linkColorFor(link as GLink, {
+              highlightLinks: c.highlightLinks,
+              activePath: c.activePath,
+              maxDistance: c.maxDistance,
+              distanceFromMe: c.distanceFromMe,
+              filterNodes: c.tagMatchIds,
+            })
+          }
+          linkLineDash={(link) => linkLineDashFor(link as GLink)}
+          nodePointerAreaPaint={paintNodePointerArea}
+          linkCanvasObjectMode={() => 'after'}
+          linkCanvasObject={(link, ctx, globalScale) =>
+            drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
+          }
+          onNodeClick={(node) => selectAndShowCard(String(node.id))}
+          onBackgroundClick={() => {
+            if (activeSheet === 'card') closeCardSheet();
+            setShowDistancePopup(false);
+          }}
+        />
+      </div>
 
       {/* TOP-LEFT CORNER: Search & Tag Filter & View Switcher */}
       <div
@@ -344,33 +302,8 @@ export const MobileGraphView = ({
           title="Search"
         >
           <SearchIcon size={20} />
-        </button>
-        <button
-          style={{
-            ...cornerButtonStyle,
-            borderColor: selectedTag || tagCategoryFilter !== 'ALL' ? '#3d8bff' : '#3a3a40',
-            color: selectedTag || tagCategoryFilter !== 'ALL' ? '#6ab0ff' : '#f0f0f0',
-          }}
-          onClick={() => {
-            setActiveSheet('tagFilter');
-            setShowDistancePopup(false);
-          }}
-          aria-label="Filter by tags"
-          title="Filter by tags"
-        >
-          <TagIcon size={18} />
-          {(selectedTag || tagCategoryFilter !== 'ALL') && (
-            <span
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
-                width: 8,
-                height: 8,
-                borderRadius: '4px',
-                background: '#3d8bff',
-              }}
-            />
+          {c.tagMatchIds && (
+            <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '4px', background: '#3d8bff' }} />
           )}
         </button>
       </div>
@@ -451,72 +384,8 @@ export const MobileGraphView = ({
         </button>
       </div>
 
-      {/* GRAPH UPDATE NOTIFICATION BANNER */}
-      {c.hasGraphUpdate && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(max(12px, env(safe-area-inset-top, 12px)) + 52px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 30,
-            background: 'rgba(28, 28, 30, 0.96)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid #3d8bff',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(61, 139, 255, 0.3)',
-            borderRadius: '24px',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            color: '#f0f0f0',
-            fontSize: '13px',
-            maxWidth: 'calc(100vw - 32px)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3d8bff', display: 'inline-block', boxShadow: '0 0 6px #3d8bff', flexShrink: 0 }} />
-          <span>Graph has been updated, </span>
-          <button
-            type="button"
-            onClick={c.handleRefreshGraph}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#6ab0ff',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              fontWeight: 600,
-              padding: 0,
-              fontSize: '13px',
-            }}
-          >
-            refresh
-          </button>
-          <button
-            type="button"
-            onClick={c.dismissGraphUpdate}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#9a9a9a',
-              cursor: 'pointer',
-              fontSize: '14px',
-              padding: '0 0 0 4px',
-              display: 'flex',
-              alignItems: 'center',
-              lineHeight: 1,
-            }}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* ACTIVE PATH FLOATING BANNER */}
-      {c.activePath && !c.hasGraphUpdate && (
+      {c.activePath && (
         <div
           style={{
             position: 'absolute',
@@ -717,7 +586,7 @@ export const MobileGraphView = ({
       >
         <button
           style={cornerButtonStyle}
-          onClick={c.handleLocateMe}
+          onClick={() => c.handleLocateMe()}
           aria-label="Locate Me"
           title="Locate Me"
         >
@@ -760,34 +629,32 @@ export const MobileGraphView = ({
 
       {/* Search overlay */}
       <BottomSheet open={activeSheet === 'search'} onClose={() => setActiveSheet(null)} title="Search">
-        <input
-          autoFocus
-          type="text"
-          placeholder="Search users or tags..."
-          value={c.searchTerm}
-          onChange={(e) => c.setSearchTerm(e.target.value)}
-          style={{ padding: '12px', width: '100%', boxSizing: 'border-box', marginBottom: '10px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '8px', fontSize: '16px' }}
-        />
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '14px', fontSize: '13px', color: '#9a9a9a' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', minHeight: 36 }}>
-            <input
-              type="checkbox"
-              checked={c.searchNames}
-              onChange={(e) => c.setSearchNames(e.target.checked)}
-              style={{ accentColor: '#3d8bff', width: 18, height: 18 }}
-            />
-            Names
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', minHeight: 36 }}>
-            <input
-              type="checkbox"
-              checked={c.searchTags}
-              onChange={(e) => c.setSearchTags(e.target.checked)}
-              style={{ accentColor: '#3d8bff', width: 18, height: 18 }}
-            />
-            Tags
-          </label>
+        <div style={{ display: 'flex', marginBottom: '10px' }}>
+          <SearchModeToggle mode={c.searchMode} onChange={c.setSearchMode} size="md" />
         </div>
+        {c.searchMode === 'tags' ? (
+          <div style={{ marginBottom: '14px', fontSize: '16px' }}>
+            <TagQueryField
+              criteria={c.tagCriteria}
+              onChange={c.setTagCriteria}
+              matchCount={c.tagMatchIds ? c.tagMatchIds.size : null}
+              loading={c.searchLoading}
+              rows={pickerRows('regular', true)}
+              layout="inline"
+              placeholder={SEARCH_PLACEHOLDERS.tags}
+              inputStyle={{ padding: '10px 12px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px' }}
+            />
+          </div>
+        ) : (
+          <input
+            autoFocus
+            type="text"
+            placeholder={SEARCH_PLACEHOLDERS[c.searchMode]}
+            value={c.searchTerm}
+            onChange={(e) => c.setSearchTerm(e.target.value)}
+            style={{ padding: '12px', width: '100%', boxSizing: 'border-box', marginBottom: '14px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '8px', fontSize: '16px' }}
+          />
+        )}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {c.searchMatches.map((u) => (
             <button
@@ -820,93 +687,10 @@ export const MobileGraphView = ({
               )}
             </button>
           ))}
-          {c.searchTerm.trim() !== '' && c.searchMatches.length === 0 && (
+          {c.searchMode !== 'tags' && c.searchTerm.trim() !== '' && c.searchMatches.length === 0 && (
             <div style={{ color: '#9a9a9a', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>
               No matches found
             </div>
-          )}
-        </div>
-      </BottomSheet>
-
-      {/* Tag filter sheet */}
-      <BottomSheet open={activeSheet === 'tagFilter'} onClose={() => setActiveSheet(null)} title="Filter by Tags">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '13px', color: '#9a9a9a' }}>
-            {selectedTag ? `Filtered by: ${selectedTag}` : tagCategoryFilter !== 'ALL' ? `Showing: ${tagCategoryFilter.toLowerCase()} tags` : 'Showing all users'}
-          </span>
-          {(selectedTag || tagCategoryFilter !== 'ALL') && (
-            <button
-              onClick={() => {
-                setSelectedTag(null);
-                setTagCategoryFilter('ALL');
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#ff6b6b',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '6px 10px',
-              }}
-            >
-              Reset Filter
-            </button>
-          )}
-        </div>
-
-        {/* Category tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-          {(['ALL', 'GLOBAL', 'CUSTOM'] as const).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => {
-                setTagCategoryFilter(cat);
-                setSelectedTag(null);
-              }}
-              style={tabButtonStyle(tagCategoryFilter === cat)}
-            >
-              {cat === 'ALL' ? 'All Tags' : cat === 'GLOBAL' ? 'Global' : 'Custom'}
-            </button>
-          ))}
-        </div>
-
-        {/* Tag list */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '40dvh', overflowY: 'auto' }}>
-          {availableTags
-            .filter((t) => tagCategoryFilter === 'ALL' || (tagCategoryFilter === 'GLOBAL' ? t.category !== 'CUSTOM' : t.category === 'CUSTOM'))
-            .map((t) => {
-              const isSelected = selectedTag === t.label;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setSelectedTag(isSelected ? null : t.label);
-                  }}
-                  style={{
-                    padding: '8px 14px',
-                    minHeight: 40,
-                    borderRadius: '20px',
-                    border: isSelected ? '1px solid #3d8bff' : '1px solid #3a3a40',
-                    background: isSelected ? 'rgba(61, 139, 255, 0.2)' : 'rgba(44, 44, 46, 0.8)',
-                    color: isSelected ? '#6ab0ff' : '#f0f0f0',
-                    fontSize: '13px',
-                    fontWeight: isSelected ? 600 : 400,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <span>{t.label}</span>
-                  <span style={{ fontSize: '10px', color: isSelected ? '#a6d0ff' : '#8a8a90' }}>
-                    {t.category}
-                  </span>
-                </button>
-              );
-            })}
-          {availableTags.filter((t) => tagCategoryFilter === 'ALL' || (tagCategoryFilter === 'GLOBAL' ? t.category !== 'CUSTOM' : t.category === 'CUSTOM')).length === 0 && (
-            <span style={{ color: '#9a9a9a', fontSize: '13px', padding: '12px 0' }}>No tags found in this category</span>
           )}
         </div>
       </BottomSheet>
@@ -1209,19 +993,10 @@ export const MobileGraphView = ({
           />
           Show pending connections
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: 44, cursor: 'pointer', fontSize: '13px' }}>
-          <input
-            type="checkbox"
-            checked={c.autoApplyUpdates}
-            onChange={(e) => c.setAutoApplyUpdates(e.target.checked)}
-            style={{ accentColor: '#3d8bff', width: 18, height: 18 }}
-          />
-          Auto-apply network updates
-        </label>
         <button
           type="button"
           onClick={() => {
-            c.handleRefreshGraph();
+            c.loadData();
             setActiveSheet(null);
           }}
           style={{ ...fabActionStyle, marginTop: '8px', width: '100%', borderColor: '#3a3a40', color: '#6ab0ff', background: 'rgba(61, 139, 255, 0.12)' }}
@@ -1286,6 +1061,8 @@ export const MobileGraphView = ({
               onSelectNode={(nodeId: string) => selectAndShowCard(nodeId)}
               isCurrentUser={c.selectedUser.id === currentUser.id}
               onBioUpdated={(newBio) => c.handleBioUpdated(c.selectedUser!.id, newBio)}
+              onTagsChange={(update) => c.updateUserTags(c.selectedUser!.id, update)}
+              onNoteChange={(note) => c.updateUserNote(c.selectedUser!.id, note)}
               compact={true}
             />
           </>
@@ -1295,7 +1072,7 @@ export const MobileGraphView = ({
       {/* Path breadcrumb */}
       <BottomSheet open={activeSheet === 'path' && c.activePath !== null} onClose={closePathSheet} title="Path Details">
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-          {c.pathBreadcrumb.map((hop, index) => (
+          {c.pathBreadcrumb.map((hop) => (
             <div key={hop.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
               <button
                 onClick={() => selectAndShowCard(hop.id)}
@@ -1307,14 +1084,14 @@ export const MobileGraphView = ({
                   padding: '4px 0',
                   minHeight: 32,
                   fontSize: '13px',
-                  fontWeight: index === 0 || index === c.pathBreadcrumb.length - 1 ? 600 : 400,
+                  // fontWeight: index === 0 || index === c.pathBreadcrumb.length - 1 ? 600 : 400,
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
               >
-                {index === 0 ? `Start: ${fullName(hop)}` : index === c.pathBreadcrumb.length - 1 ? `Target: ${fullName(hop)}` : `${index}. ${fullName(hop)}`}
+                {`${fullName(hop)}`}
               </button>
-              {index < c.pathBreadcrumb.length - 1 && <span style={{ color: '#9a9a9a', paddingLeft: '4px', fontSize: '11px', lineHeight: '12px' }}>↓</span>}
+              {/* { < c.pathBreadcrumb.length - 1 && <span style={{ color: '#9a9a9a', paddingLeft: '4px', fontSize: '11px', lineHeight: '12px' }}>↓</span>} */}
             </div>
           ))}
         </div>

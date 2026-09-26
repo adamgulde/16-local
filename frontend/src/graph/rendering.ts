@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useLayoutEffect, type RefObject } from 'react';
 import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-graph-2d';
 import type { Node, Link, User } from '../services/userService';
 
@@ -65,13 +65,21 @@ const CHARGE_BASE = -30;
 const CHARGE_DEGREE_STEP = 9;
 const LINK_DISTANCE = 20;
 
+// The layout is computed synchronously before the first frame is drawn and never animates:
+// d3's default cooling (alpha 1 → 0.001) takes 300 ticks, and cooldownTicks={0} stops the
+// engine right after, so the graph first appears already at rest. Spread into ForceGraph2D.
+export const STATIC_LAYOUT = { warmupTicks: 300, cooldownTicks: 0 } as const;
+
 /** Wires the charge/link forces to distanceFromMe — identical physics for every renderer. */
 export const useGraphPhysics = (
   fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
   links: DisplayLink[],
   distanceFromMe: Map<string, number>
 ) => {
-  useEffect(() => {
+  // A layout effect, not a passive one: force-graph runs its warmup in a debounced digest after
+  // receiving new graphData, and the forces must be in place before that or the static layout
+  // is computed with d3's defaults.
+  useLayoutEffect(() => {
     fgRef.current?.d3Force('charge')?.strength((node: GNode) => {
       const distance = distanceFromMe.get(String(node.id)) ?? DEGREE_FADE_MAX;
       return CHARGE_BASE - CHARGE_DEGREE_STEP * Math.min(distance, DEGREE_FADE_MAX);
