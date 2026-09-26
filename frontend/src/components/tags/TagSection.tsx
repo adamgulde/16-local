@@ -26,6 +26,9 @@ interface TagSectionProps {
   // them (the columns view) the section fetches and keeps this person's tags itself.
   tags?: TagAssignment[] | null;
   onTagsChange?: (update: TagsUpdate) => void;
+  // '/api/users' (default) for a person, '/api/contacts' for a contact editor (ContactCard, F3) —
+  // same shapes and picker either way (PLAN.md §3).
+  endpointBase?: string;
 }
 
 const LEGEND: TagKind[] = ['SELF', 'CUSTOM', 'PRIVATE'];
@@ -33,7 +36,7 @@ const LEGEND: TagKind[] = ['SELF', 'CUSTOM', 'PRIVATE'];
 // Applied tags grouped by category (icon per row), plus a collapsible compact picker with the
 // same behaviour as tag search. On your own card you self-tag (public); on anyone else's card
 // every tag you add is private to you, and sensitive self-only categories are hidden.
-export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange }: TagSectionProps) => {
+export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange, endpointBase }: TagSectionProps) => {
   const isMobile = useIsMobile();
   const preloaded = tags != null && onTagsChange != null;
   const [ownTags, setOwnTags] = useState<TagAssignment[]>([]);
@@ -51,10 +54,10 @@ export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange }: Tag
   // Mounted with key={subjectId}, so switching people starts from fresh state.
   useEffect(() => {
     if (!preloaded) {
-      fetchTagsForUser(subjectId).then(setOwnTags).catch(() => setError('Could not load tags.'));
+      fetchTagsForUser(subjectId, endpointBase).then(setOwnTags).catch(() => setError('Could not load tags.'));
     }
     fetchAllTags().then(setDictionary).catch(() => {});
-  }, [subjectId, preloaded]);
+  }, [subjectId, preloaded, endpointBase]);
 
   const categoryOrder = useMemo(
     () => new Map(dictionary.filter((t) => t.level === 1).map((t, i) => [t.label, i])),
@@ -100,7 +103,7 @@ export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange }: Tag
       return;
     }
     run(async () => {
-      const next = await addTagToUser(subjectId, { tagId: tag.id });
+      const next = await addTagToUser(subjectId, { tagId: tag.id }, endpointBase);
       setQuery('');
       updateTags(() => next);
     }, 'Could not add tag.');
@@ -108,7 +111,7 @@ export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange }: Tag
 
   const handleCreateCustom = (label: string, parent: Tag | null) =>
     run(async () => {
-      const next = await addTagToUser(subjectId, { customLabel: label, parentTagId: parent?.id ?? null });
+      const next = await addTagToUser(subjectId, { customLabel: label, parentTagId: parent?.id ?? null }, endpointBase);
       setQuery('');
       updateTags(() => next);
     }, 'Could not add tag.');
@@ -117,7 +120,7 @@ export const TagSection = ({ subjectId, isCurrentUser, tags, onTagsChange }: Tag
     if (removingIds.has(assignmentId)) return;
     setRemovingIds((prev) => new Set(prev).add(assignmentId));
     setError(null);
-    removeTagFromUser(subjectId, assignmentId)
+    removeTagFromUser(subjectId, assignmentId, endpointBase)
       .then(() => updateTags((prev) => prev.filter((a) => a.id !== assignmentId)))
       .catch((err) => setError(getSafeErrorMessage(err, 'Could not remove tag.')))
       .finally(() =>

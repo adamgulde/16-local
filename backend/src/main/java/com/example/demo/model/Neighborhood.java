@@ -6,12 +6,10 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * A neighborhood is founded by whichever user registers with no sponsor (or whose sponsor
- * later declines their connection). Every other user joins their sponsor's neighborhood.
- * curveIndex is both this entity's primary key and its position on the top-order bits of
- * the shared Hilbert curve (see HilbertCurve) — assigned once via DB identity generation
- * and never changed. Using a plain auto-increment as the key (rather than a UUID) is what
- * gives us the monotonic sequence the curve needs, for free.
+ * Vestigial since plan §4 P5 removed the global map: every user still needs a row here
+ * ({@code users.neighborhood_curve_index} is NOT NULL until a later migration drops it), but
+ * everyone now shares the one "default" neighborhood ({@code PlacementService#defaultNeighborhood})
+ * instead of being placed on a Hilbert curve — {@code memberCount} is no longer maintained.
  */
 @Entity
 @Table(name = "neighborhoods")

@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -196,27 +195,6 @@ class TagServiceTest {
         assertThat(tagService.getTagsForSubject(selfId, selfId))
                 .extracting(TagAssignmentResponse::label)
                 .containsExactlyInAnyOrder("Legacy Label", "Bebop", "Jazz");
-    }
-
-    @Test
-    void visibleTagsBySubjectCoversTheDirectoryWithTheSameVisibilityRule() {
-        UserTag myJazz = UserTag.builder().id(UUID.randomUUID()).tagger(self).subject(self).tag(jazz).build();
-        UserTag theirGender = UserTag.builder().id(UUID.randomUUID()).tagger(other).subject(other).tag(male).build();
-        UserTag myPrivateTagOnThem = UserTag.builder().id(UUID.randomUUID()).tagger(self).subject(other)
-                .customLabel("Met at SXSW").build();
-        UserTag theirUncategorized = UserTag.builder().id(UUID.randomUUID()).tagger(other).subject(other)
-                .customLabel("Legacy Label").build();
-        when(userTagRepository.findAllVisibleTo(selfId))
-                .thenReturn(List.of(myJazz, theirGender, myPrivateTagOnThem, theirUncategorized));
-
-        Map<UUID, List<TagAssignmentResponse>> bySubject = tagService.getVisibleTagsBySubject(selfId);
-
-        assertThat(bySubject.get(selfId)).extracting(TagAssignmentResponse::label).containsExactly("Jazz");
-        assertThat(bySubject.get(otherId))
-                .extracting(TagAssignmentResponse::label, TagAssignmentResponse::kind)
-                .containsExactlyInAnyOrder(
-                        tuple("Male", TagAssignmentResponse.Kind.SELF),
-                        tuple("Met at SXSW", TagAssignmentResponse.Kind.PRIVATE));
     }
 
     @Test

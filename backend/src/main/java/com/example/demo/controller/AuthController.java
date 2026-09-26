@@ -6,9 +6,11 @@ import com.example.demo.model.User;
 import com.example.demo.ratelimit.RateLimitKeys;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.AuthTokenService;
-import com.example.demo.service.ConnectionService;
+import com.example.demo.service.ContactService;
 import com.example.demo.service.OtpService;
 import com.example.demo.service.PlacementService;
+import com.example.demo.service.ShareRequestService;
+import com.example.demo.util.MinimumResponseTime;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,9 +34,10 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final AuthTokenService authTokenService;
-    private final ConnectionService connectionService;
     private final PlacementService placementService;
     private final OtpService otpService;
+    private final ContactService contactService;
+    private final ShareRequestService shareRequestService;
 
     @Value("${app.invite.max-registrations-per-day:10}")
     private int maxInviteRegistrationsPerDay;
@@ -53,7 +56,7 @@ public class AuthController {
             otpService.sendOtp(phone);
             log.info("Sent sign-in OTP to phone_hash={}", RateLimitKeys.hash(phone));
         }
-        enforceMinimumResponseTime(startNanos);
+        MinimumResponseTime.enforce(startNanos);
         return ResponseEntity.ok().build();
     }
 
@@ -73,8 +76,7 @@ public class AuthController {
 
         log.info("User {} logged in via OTP", user.getId());
         String token = authTokenService.issueToken(user);
-        List<UUID> relationships = connectionService.getNeighborIds(user.getId());
-        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, true)));
     }
 
     @PostMapping("/signup/initiate-otp")
@@ -97,7 +99,7 @@ public class AuthController {
             otpService.sendOtp(phone);
             log.info("Sent sign-up OTP to phone_hash={}", RateLimitKeys.hash(phone));
         }
-        enforceMinimumResponseTime(startNanos);
+        MinimumResponseTime.enforce(startNanos);
         return ResponseEntity.ok().build();
     }
 
@@ -143,10 +145,12 @@ public class AuthController {
             inviter = userRepository.findByInviteCode(inviteCode)
                     .orElseThrow(() -> new BadRequestException("Invalid invite code"));
 
-            // S4: cap registrations per invite code per day (DB count over a rolling 24h
-            // window of connections created via this inviter — each invite-code registration
-            // immediately creates exactly one such connection, below).
-            long recentInviteRegistrations = connectionService.countConnectionsCreatedSince(
+            // S4: cap registrations per invite code per day (DB count over a rolling 24h window of
+            // registered contacts created for this inviter — each invite-code registration
+            // immediately creates exactly one, via connectMutually below; plan §4 P5 note: this
+            // replaces the old `connections`-table count now that nothing writes that table any
+            // more on invite registration).
+            long recentInviteRegistrations = contactService.countRegisteredContactsCreatedSince(
                     inviter.getId(), Instant.now().minus(Duration.ofDays(1)));
             if (recentInviteRegistrations >= maxInviteRegistrationsPerDay) {
                 throw new BadRequestException("This invite link has reached its limit for today");
@@ -154,23 +158,28 @@ public class AuthController {
         }
 
         String uniqueInviteCode = generateUniqueInviteCode();
+        // Plan §4 P5: the global map is gone — every new user just shares the one default
+        // neighborhood (users.neighborhood_curve_index is NOT NULL until a later migration drops it).
         User user = User.builder()
                 .firstName(firstName)
                 .lastName(lastName)
                 .phoneNumber(phone)
                 .inviteCode(uniqueInviteCode)
                 .createdAt(Instant.now())
+                .neighborhood(placementService.defaultNeighborhood())
                 .build();
+        userRepository.save(user);
 
         if (inviter != null) {
-            user = placementService.joinNeighborhood(user, inviter.getNeighborhood());
-            userRepository.save(user);
-            connectionService.connect(user, inviter);
+            // Private-network mutual edge (plan §3): no placeholder to prefer on either side, so
+            // both get a fresh REGISTERED contact for the other. This is now the only edge created
+            // by invite-code registration — the old `connections` table is no longer written here.
+            contactService.connectMutually(user, inviter, null);
             log.info("User {} auto-connected to inviter {}", user.getId(), inviter.getId());
-        } else {
-            user = placementService.foundNeighborhood(user);
-            userRepository.save(user);
         }
+
+        // Deliver any share requests sent to this phone number before it had an account (plan §4 P3).
+        shareRequestService.attachPendingRequestsForNewUser(user);
 
         // Clean up verified OTP record after successful registration
         otpService.clearOtp(phone);
@@ -178,8 +187,7 @@ public class AuthController {
         // Never log the invite code itself in the clear — hash it (same as rate-limit keys).
         log.info("Registered new user {} with invite code hash {}", user.getId(), RateLimitKeys.hash(uniqueInviteCode));
         String token = authTokenService.issueToken(user);
-        List<UUID> relationships = connectionService.getNeighborIds(user.getId());
-        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, true)));
     }
 
     @GetMapping("/validate-invite")
@@ -214,29 +222,13 @@ public class AuthController {
                 .orElseThrow(() -> new BadRequestException("User not found"));
 
         String token = authTokenService.issueToken(user);
-        List<UUID> relationships = connectionService.getNeighborIds(user.getId());
-        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+        return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, true)));
     }
 
     // S2: pad the enumeration-sensitive initiate-otp responses to a constant floor (plus a
     // little jitter) so response timing can't be used to distinguish "existing/eligible number,
-    // OTP dispatched" from "ineligible number, nothing sent" — a plain sleep is fine at this
-    // request volume; a real async delay queue would be overkill here.
-    private static final long MIN_INITIATE_OTP_RESPONSE_MILLIS = 400;
-    private static final long MIN_INITIATE_OTP_JITTER_MILLIS = 100;
-
-    private void enforceMinimumResponseTime(long startNanos) {
-        long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
-        long targetMillis = MIN_INITIATE_OTP_RESPONSE_MILLIS + secureRandom.nextInt((int) MIN_INITIATE_OTP_JITTER_MILLIS);
-        long remainingMillis = targetMillis - elapsedMillis;
-        if (remainingMillis > 0) {
-            try {
-                Thread.sleep(remainingMillis);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
+    // OTP dispatched" from "ineligible number, nothing sent" — MinimumResponseTime is shared with
+    // ShareRequestService's create() for the same reason (plan §4 P4 fix-up).
 
     private String generateUniqueInviteCode() {
         for (int attempt = 0; attempt < 20; attempt++) {
@@ -257,21 +249,7 @@ public class AuthController {
     }
 
     private String cleanPhone(String phone) {
-        if (phone == null) return null;
-        String trimmed = phone.trim();
-        if (trimmed.isEmpty()) return null;
-
-        String digits = trimmed.replaceAll("\\D", "");
-        if (digits.startsWith("1") && digits.length() == 11) {
-            digits = digits.substring(1);
-        }
-        if (digits.length() == 10) {
-            return String.format("+1 %s-%s-%s",
-                    digits.substring(0, 3),
-                    digits.substring(3, 6),
-                    digits.substring(6));
-        }
-        return trimmed;
+        return com.example.demo.util.PhoneNumbers.clean(phone);
     }
 
     private boolean isBlank(String s) {

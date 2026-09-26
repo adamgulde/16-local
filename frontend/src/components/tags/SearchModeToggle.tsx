@@ -1,21 +1,21 @@
-import type { SearchMode } from '../../services/userService';
-
-const MODES: { value: SearchMode; label: string }[] = [
-  { value: 'names', label: 'Names' },
-  { value: 'tags', label: 'Tags' },
-  { value: 'bios', label: 'Bios' },
-  { value: 'notes', label: 'Notes' },
-];
-
-interface SearchModeToggleProps {
-  mode: SearchMode;
-  onChange: (mode: SearchMode) => void;
+interface SearchModeToggleProps<M extends string> {
+  mode: M;
+  onChange: (mode: M) => void;
   size?: 'sm' | 'md';
+  // Every caller now shares the graph's search modes (names/tags/about/notes — see
+  // graph/graphSearch.ts), so this is required rather than defaulting to a legacy mode set.
+  modes: { value: M; label: string }[];
 }
 
 // A segmented radio group: exactly one field is searched at a time.
-export const SearchModeToggle = ({ mode, onChange, size = 'sm' }: SearchModeToggleProps) => {
+export const SearchModeToggle = <M extends string>({
+  mode,
+  onChange,
+  size = 'sm',
+  modes,
+}: SearchModeToggleProps<M>) => {
   const md = size === 'md';
+  const options = modes;
   return (
     <div
       role="radiogroup"
@@ -30,7 +30,7 @@ export const SearchModeToggle = ({ mode, onChange, size = 'sm' }: SearchModeTogg
         border: '1px solid #2e2e34',
       }}
     >
-      {MODES.map((m) => {
+      {options.map((m) => {
         const active = m.value === mode;
         return (
           <button

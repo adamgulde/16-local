@@ -4,12 +4,8 @@ import com.example.demo.dto.AuthResponse;
 import com.example.demo.dto.InitiateOtpRequest;
 import com.example.demo.dto.RegisterRequest;
 import com.example.demo.dto.VerifyOtpRequest;
-import com.example.demo.model.ConnectionRequest;
-import com.example.demo.model.User;
-import com.example.demo.repository.ConnectionRequestRepository;
+import com.example.demo.repository.ContactRepository;
 import com.example.demo.repository.OtpRepository;
-import com.example.demo.repository.UserRepository;
-import com.example.demo.service.ConnectionService;
 import com.example.demo.service.verify.TwilioVerifyService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,15 +14,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.context.annotation.Import;
 
-import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -45,13 +37,7 @@ public class AuthControllerIT {
     private OtpRepository otpRepository;
 
     @Autowired
-    private ConnectionRequestRepository connectionRequestRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private ConnectionService connectionService;
+    private ContactRepository contactRepository;
 
     @MockitoBean
     private TwilioVerifyService twilioVerifyService;
@@ -149,42 +135,12 @@ public class AuthControllerIT {
 
         assertThat(userBResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(userBResponse.getBody()).isNotNull();
-        assertThat(userBResponse.getBody().user().relationships())
-                .contains(userAResponse.getBody().user().id());
-    }
-
-    @Test
-    void shouldNotAutoAcceptWhenRequestSentToAnotherRegisteredUser() {
-        // User 1
-        String phone1 = nextPhone("555993");
-        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(phone1, null), Void.class);
-        ResponseEntity<AuthResponse> user1 = restTemplate.postForEntity(baseUrl("/api/auth/register"),
-                new RegisterRequest(phone1, getOtp(phone1), "User", "One", null), AuthResponse.class);
-
-        // User 2
-        String phone2 = nextPhone("555994");
-        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(phone2, null), Void.class);
-        ResponseEntity<AuthResponse> user2 = restTemplate.postForEntity(baseUrl("/api/auth/register"),
-                new RegisterRequest(phone2, getOtp(phone2), "User", "Two", null), AuthResponse.class);
-
-        // User 1 sends request to User 2
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(user1.getBody().token());
-        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(Map.of("receiverId", user2.getBody().user().id().toString()), headers);
-
-        ResponseEntity<Void> sendResp = restTemplate.postForEntity(baseUrl("/api/requests"), requestEntity, Void.class);
-        assertThat(sendResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-
-        // Verify NOT connected
-        assertThat(connectionService.areConnected(user1.getBody().user().id(), user2.getBody().user().id())).isFalse();
-
-        // Verify request is PENDING
-        User receiver = userRepository.findById(user2.getBody().user().id()).orElseThrow();
-        boolean pending = connectionRequestRepository.findBySenderOrReceiver(receiver, receiver).stream()
-                .anyMatch(r -> r.getSender().getId().equals(user1.getBody().user().id())
-                        && r.getReceiver().getId().equals(user2.getBody().user().id())
-                        && r.getStatus() == ConnectionRequest.RequestStatus.PENDING);
-        assertThat(pending).isTrue();
+        // Plan §3: invite-code registration keeps auto-connect via the private-graph mutual edge —
+        // UserResponse no longer carries `relationships` (P5), so check the contacts table instead.
+        assertThat(contactRepository.existsByOwnerIdAndLinkedUserId(
+                userBResponse.getBody().user().id(), userAResponse.getBody().user().id())).isTrue();
+        assertThat(contactRepository.existsByOwnerIdAndLinkedUserId(
+                userAResponse.getBody().user().id(), userBResponse.getBody().user().id())).isTrue();
     }
 
     @Test

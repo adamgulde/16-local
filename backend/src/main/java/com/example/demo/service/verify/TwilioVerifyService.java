@@ -33,6 +33,16 @@ public class TwilioVerifyService {
     @Value("${twilio.verify-service-sid:}")
     private String verifyServiceSid;
 
+    /**
+     * S3/bot-prevention fix-up: the "555-000-xxxx" test-number bypass (fixed code {@code 000000},
+     * no SMS, no Twilio call) must never be reachable in production regardless of Twilio
+     * configuration state — it previously fired unconditionally for any number matching that
+     * pattern, letting a bot register unlimited accounts with zero SMS cost. Off by default;
+     * {@code app.otp.test-numbers-enabled} turns it on only where explicitly wanted (dev/test).
+     */
+    @Value("${app.otp.test-numbers-enabled:false}")
+    private boolean testNumbersEnabled;
+
     private boolean configured = false;
 
     private record DevVerifyEntry(String code, Instant expiresAt) {}
@@ -86,6 +96,15 @@ public class TwilioVerifyService {
         this.configured = configured;
     }
 
+    public void setTestNumbersEnabled(boolean testNumbersEnabled) {
+        this.testNumbersEnabled = testNumbersEnabled;
+    }
+
+    /** The one gate every test-number bypass (here and in {@link com.example.demo.service.OtpService}) goes through. */
+    public boolean isTestPhoneNumberBypassEnabled(String phone) {
+        return testNumbersEnabled && isTestPhoneNumber(phone);
+    }
+
     public static String toE164(String phone) {
         if (phone == null || phone.isBlank()) return "";
         String cleaned = phone.trim().replaceAll("[^0-9+]", "");
@@ -120,8 +139,8 @@ public class TwilioVerifyService {
             throw new BadRequestException("Please enter a valid, complete phone number.");
         }
 
-        // Test accounts: always generate default bypass 000000
-        if (isTestPhoneNumber(phoneNumber)) {
+        // Test accounts: always generate default bypass 000000 — only when explicitly enabled.
+        if (isTestPhoneNumberBypassEnabled(phoneNumber)) {
             DevVerifyEntry entry = new DevVerifyEntry("000000", Instant.now().plusSeconds(900));
             devVerifyStore.put(e164, entry);
             devVerifyStore.put(phoneNumber.trim(), entry);
@@ -166,8 +185,8 @@ public class TwilioVerifyService {
         String cleanCode = code.trim();
         String e164 = toE164(phoneNumber);
 
-        // Instant approval for test accounts using the default code
-        if (isTestPhoneNumber(phoneNumber) && "000000".equals(cleanCode)) {
+        // Instant approval for test accounts using the default code — only when explicitly enabled.
+        if (isTestPhoneNumberBypassEnabled(phoneNumber) && "000000".equals(cleanCode)) {
             return true;
         }
 

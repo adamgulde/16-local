@@ -1,5 +1,6 @@
 package com.example.demo.dto;
 
+import com.example.demo.model.ContactTag;
 import com.example.demo.model.UserTag;
 import com.example.demo.service.TagTaxonomy;
 
@@ -67,6 +68,48 @@ public record TagAssignmentResponse(
                 isDictionary ? anchor.level() : anchor.level() + 1,
                 root.icon(),
                 isDictionary ? anchorPath : anchorPath + TagTaxonomy.PATH_SEPARATOR + userTag.getCustomLabel()
+        );
+    }
+
+    /**
+     * A tag the owner placed on one of their own contacts. Contacts are never "self", so every
+     * contact tag is shaped like a private {@link UserTag} on someone else: {@code isSelfTag} is
+     * always false, {@code isMine} always true (contact tags are only ever fetched by their
+     * owner), and {@code kind} is always {@link Kind#PRIVATE}.
+     */
+    public static TagAssignmentResponse from(ContactTag contactTag, TagTaxonomy.Snapshot taxonomy) {
+        UUID tagId = contactTag.getTag() != null ? contactTag.getTag().getId() : null;
+        UUID anchorId = tagId != null ? tagId
+                : contactTag.getParentTag() != null ? contactTag.getParentTag().getId() : null;
+        TagTaxonomy.Node anchor = taxonomy.get(anchorId).orElse(null);
+
+        if (anchor == null) {
+            String legacyCategory = contactTag.getCustomCategory();
+            boolean hasLegacyCategory = legacyCategory != null && !legacyCategory.isBlank();
+            return new TagAssignmentResponse(
+                    contactTag.getId(),
+                    hasLegacyCategory ? legacyCategory : UNCATEGORIZED,
+                    contactTag.getCustomLabel(),
+                    false, true, Kind.PRIVATE, null, null, 1, null,
+                    hasLegacyCategory ? legacyCategory + TagTaxonomy.PATH_SEPARATOR + contactTag.getCustomLabel()
+                            : contactTag.getCustomLabel());
+        }
+
+        TagTaxonomy.Node root = taxonomy.root(anchor.id());
+        String anchorPath = taxonomy.path(anchor.id());
+        boolean isDictionary = tagId != null;
+        return new TagAssignmentResponse(
+                contactTag.getId(),
+                root.label(),
+                isDictionary ? anchor.label() : contactTag.getCustomLabel(),
+                false,
+                true,
+                Kind.PRIVATE,
+                tagId,
+                isDictionary ? anchor.parentId() : anchor.id(),
+                isDictionary ? anchor.level() : anchor.level() + 1,
+                root.icon(),
+                isDictionary ? anchorPath : anchorPath + TagTaxonomy.PATH_SEPARATOR + contactTag.getCustomLabel()
         );
     }
 }

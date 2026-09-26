@@ -15,19 +15,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Self-tags (tagger == subject) are public — dictionary tags, or custom labels filed under a
  * category — and anyone viewing a card sees them. Tags placed on someone else are private to the
  * tagger (dictionary or custom) and never shown to the subject or any other viewer — the same
- * visibility rule as {@link NoteService}. Self-only categories (age, nationality, identity
- * groups) can never be applied to someone else. All rules are enforced here, never left to the client.
+ * visibility rule contacts' private notes/tags have (plan §4 P2). Self-only categories (age,
+ * nationality, identity groups) can never be applied to someone else. All rules are enforced here,
+ * never left to the client.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,7 +46,6 @@ public class TagService {
         return taxonomy.all().stream().map(node -> TagResponse.from(node, taxonomy)).toList();
     }
 
-    /** Mirrors UserTagRepository.VISIBLE_TO_VIEWER — keep the two in step. */
     static boolean isVisible(UserTag userTag, UUID viewerId) {
         boolean isSelfTag = userTag.getTagger().getId().equals(userTag.getSubject().getId());
         boolean isMine = userTag.getTagger().getId().equals(viewerId);
@@ -61,18 +59,6 @@ public class TagService {
                 .filter(userTag -> isVisible(userTag, viewerId))
                 .map(userTag -> TagAssignmentResponse.from(userTag, viewerId, taxonomy))
                 .toList();
-    }
-
-    /** {@link #getTagsForSubject} for every user at once, keyed by subject — one query for the whole directory. */
-    @Transactional(readOnly = true)
-    public Map<UUID, List<TagAssignmentResponse>> getVisibleTagsBySubject(UUID viewerId) {
-        TagTaxonomy.Snapshot taxonomy = tagTaxonomy.current();
-        return userTagRepository.findAllVisibleTo(viewerId).stream()
-                .filter(userTag -> isVisible(userTag, viewerId))
-                .collect(Collectors.groupingBy(
-                        userTag -> userTag.getSubject().getId(),
-                        Collectors.mapping(userTag -> TagAssignmentResponse.from(userTag, viewerId, taxonomy),
-                                Collectors.toList())));
     }
 
     @Transactional

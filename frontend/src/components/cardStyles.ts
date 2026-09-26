@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-// Shared by every section of the person-detail card (UserCard, BioSection, TagsAndNotes) so
+// Shared by every section of the person-detail card (ContactCard, AddPersonForm, TagsAndNotes) so
 // "Bio", "Tags", "Notes", and "Connections" all read as the same weight of heading instead of
 // each section inventing its own — the card has exactly one visual heading level below the
 // person's name.

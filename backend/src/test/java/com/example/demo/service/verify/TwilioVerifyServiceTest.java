@@ -50,13 +50,25 @@ class TwilioVerifyServiceTest {
     }
 
     @Test
-    void sendVerification_testAccount_setsDefaultMockCode() {
+    void sendVerification_testAccount_setsDefaultMockCode_whenBypassEnabled() {
+        service.setTestNumbersEnabled(true);
         String testPhone = "+1 555-000-0001";
         boolean sent = service.sendVerification(testPhone);
 
         assertThat(sent).isTrue();
         assertThat(service.getLatestMockCode(testPhone)).isEqualTo("000000");
         assertThat(service.checkVerification(testPhone, "000000")).isTrue();
+    }
+
+    @Test
+    void sendVerification_testAccount_goesThroughTheNormalMockPathWhenBypassDisabled() {
+        // Default (bypass disabled, as in production): a "555-000-xxxx" number is treated like
+        // any other number — a random mock code, not the fixed 000000.
+        String testPhone = "+1 555-000-0009";
+        service.sendVerification(testPhone);
+
+        assertThat(service.getLatestMockCode(testPhone)).isNotEqualTo("000000");
+        assertThat(service.checkVerification(testPhone, "000000")).isFalse();
     }
 
     @Test

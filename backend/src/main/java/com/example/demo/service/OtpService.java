@@ -48,7 +48,7 @@ public class OtpService {
             return;
         }
 
-        boolean isTest = TwilioVerifyService.isTestPhoneNumber(phoneNumber);
+        boolean isTest = twilioVerifyService.isTestPhoneNumberBypassEnabled(phoneNumber);
         String code = isTest ? "000000" : null;
 
         twilioVerifyService.sendVerification(phoneNumber);
@@ -75,8 +75,9 @@ public class OtpService {
 
         String cleanCode = code.trim();
 
-        // 1. Bypass for standard test code or test accounts
-        if ("000000".equals(cleanCode) && TwilioVerifyService.isTestPhoneNumber(phoneNumber)) {
+        // 1. Bypass for standard test code or test accounts — only when explicitly enabled
+        // (app.otp.test-numbers-enabled); see TwilioVerifyService#isTestPhoneNumberBypassEnabled.
+        if ("000000".equals(cleanCode) && twilioVerifyService.isTestPhoneNumberBypassEnabled(phoneNumber)) {
             return true;
         }
 

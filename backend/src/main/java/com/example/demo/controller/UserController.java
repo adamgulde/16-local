@@ -1,151 +1,68 @@
 package com.example.demo.controller;
 
-import com.example.demo.dto.FriendSummaryResponse;
-import com.example.demo.dto.ReachResponse;
-import com.example.demo.dto.SearchMode;
-import com.example.demo.dto.SearchResult;
 import com.example.demo.dto.UserResponse;
-import com.example.demo.exception.BadRequestException;
-import com.example.demo.model.User;
-import com.example.demo.service.ConnectionService;
 import com.example.demo.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Plan §4 P5 (+ fix-up): the global directory/search/reach/friends/connection endpoints are gone
+ * — a private graph (contacts + shares) replaces them. Everything left here is self-scoped only:
+ * {@code GET/PUT /api/users/{id}} and {@code PUT /api/users/{id}/bio} were removed too — no
+ * legitimate caller without a directory (a user id otherwise only ever surfaces as someone else's
+ * {@code linkedUserId}/{@code sharerUserId}, neither of which should be a lookup key), and
+ * {@code PUT /{id}} let a caller silently overwrite their own phone number with no OTP
+ * re-verification, which under this model lets them hijack another number's pending share requests.
+ */
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
 
     private final UserService userService;
-    private final ConnectionService connectionService;
 
-    @GetMapping
-    public List<UserResponse> getAllUsers(@AuthenticationPrincipal UUID requestingUserId) {
-        return userService.getAllUsers(requestingUserId);
+    /** Self profile, incl. inviteCode and discoverableInSharedGraphs — never populated for anyone else. */
+    @GetMapping("/me")
+    public UserResponse getMe(@AuthenticationPrincipal UUID requestingUserId) {
+        return userService.getPublicUserById(requestingUserId, requestingUserId);
     }
 
     /**
-     * One mode at a time: names, bios, the caller's own notes, or tags. In TAGS mode pass tree
-     * nodes as repeated {@code tagIds} and free text as repeated {@code labels}; {@code matchAll}
-     * picks AND (default) vs OR across them.
+     * SELF-node edits: firstName/lastName/bio only. Contact edits (§3) never touch this endpoint,
+     * and neither does the phone number — changing that requires re-proving ownership via OTP
+     * (the signup/register flow), not a bare field edit; a stray {@code phoneNumber} in the body
+     * is silently ignored, never applied.
      */
-    @GetMapping("/search")
-    public List<SearchResult> searchUsers(
-            @RequestParam(required = false, defaultValue = "") String q,
-            @RequestParam(required = false, defaultValue = "NAMES") SearchMode mode,
-            @RequestParam(required = false) List<UUID> tagIds,
-            @RequestParam(required = false) List<String> labels,
-            @RequestParam(required = false, defaultValue = "true") boolean matchAll,
-            @AuthenticationPrincipal UUID requestingUserId) {
-        return userService.searchUsers(mode, q, tagIds, labels, matchAll, requestingUserId);
+    @PatchMapping("/me")
+    public UserResponse patchMe(@RequestBody Map<String, String> body, @AuthenticationPrincipal UUID requestingUserId) {
+        userService.updateSelfProfile(requestingUserId, body.get("firstName"), body.get("lastName"), body.get("bio"));
+        return userService.getPublicUserById(requestingUserId, requestingUserId);
     }
 
-    @GetMapping("/{id}")
-    public UserResponse getUserById(@PathVariable UUID id, @AuthenticationPrincipal UUID requestingUserId) {
-        return userService.getPublicUserById(id, requestingUserId);
-    }
-
-    @PutMapping("/{id}")
-    public UserResponse updateUser(@PathVariable UUID id, @RequestBody User user,
-                                    @AuthenticationPrincipal UUID requestingUserId) {
-        if (!id.equals(requestingUserId)) {
-            throw new BadRequestException("You can only update your own profile");
-        }
-        User updated = userService.updateUser(id, user);
-        return userService.getPublicUserById(updated.getId(), requestingUserId);
-    }
-
-    /** A user's public bio — visible to everyone, editable only by themselves. */
-    @PutMapping("/{id}/bio")
-    public ResponseEntity<Void> updateBio(@PathVariable UUID id, @RequestBody Map<String, String> body,
-                                           @AuthenticationPrincipal UUID requestingUserId) {
-        if (!id.equals(requestingUserId)) {
-            throw new BadRequestException("You can only update your own bio");
-        }
-        userService.updateBio(id, body.getOrDefault("bio", ""));
-        return ResponseEntity.noContent().build();
-    }
-
-    @DeleteMapping("/{id}")
-    public void deleteUser(@PathVariable UUID id, @AuthenticationPrincipal UUID requestingUserId) {
-        if (!id.equals(requestingUserId)) {
-            throw new BadRequestException("You can only delete your own account");
-        }
-        userService.deleteUser(id);
-    }
-
-    @DeleteMapping("/{id}/connection")
-    public ResponseEntity<Void> disconnect(@PathVariable UUID id, @AuthenticationPrincipal UUID requestingUserId) {
-        if (id.equals(requestingUserId)) {
-            throw new BadRequestException("Cannot disconnect from yourself");
-        }
-        connectionService.disconnect(requestingUserId, id);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PutMapping("/me/auto-reject")
-    public ResponseEntity<Void> updateAutoReject(@RequestBody Map<String, Integer> body,
-                                                  @AuthenticationPrincipal UUID requestingUserId) {
-        Integer maxDegree = body.get("maxConnectionDegree");
-        userService.updateMaxConnectionDegree(requestingUserId, maxDegree);
+    /** Plan §1.5: whether this user's registered contacts of others may show them by name in a shared graph. */
+    @PutMapping("/me/privacy")
+    public ResponseEntity<Void> updatePrivacy(@RequestBody Map<String, Boolean> body,
+                                               @AuthenticationPrincipal UUID requestingUserId) {
+        boolean discoverable = Boolean.TRUE.equals(body.get("discoverableInSharedGraphs"));
+        userService.updateDiscoverableInSharedGraphs(requestingUserId, discoverable);
         return ResponseEntity.noContent().build();
     }
 
     /**
-     * Just the ordered hop ids — the frontend only ever needs identity to draw the path, not
-     * full profiles. Returning {@link UserResponse}s here used to leak a hop's real phone
-     * number whenever the requester happened to already be directly connected to them (the
-     * same visibility rule every other endpoint correctly applies) — a "find the path between
-     * two people" feature has no legitimate reason to be a vehicle for that, so it doesn't get
-     * to see it at all now.
+     * Self-deletion only — there is no {@code DELETE /{id}} any more (deleting an arbitrary id was
+     * never actually reachable for anyone but the caller themselves, since it 400'd otherwise; this
+     * is that same behavior made structural). Cascades: the caller's own contacts/links/tags/shares
+     * go with them; a REGISTERED contact *other* people hold for the caller becomes a PLACEHOLDER
+     * (linked_user_id -> NULL, ON DELETE SET NULL) rather than disappearing — see
+     * {@code UserDeletionIT}.
      */
-    @GetMapping("/{id}/path/{targetId}")
-    public List<UUID> getShortestPath(@PathVariable UUID id, @PathVariable UUID targetId) {
-        return connectionService.findShortestPath(id, targetId);
-    }
-
-    /** % of the rest of the network reachable from user {id} within {degree} hops of the connection graph. */
-    @GetMapping("/{id}/reach")
-    public ReachResponse getReach(@PathVariable UUID id, @RequestParam int degree) {
-        if (degree < 1 || degree > 10) {
-            throw new BadRequestException("degree must be between 1 and 10");
-        }
-        int reachable = connectionService.countReachableWithinDegree(id, degree);
-        long totalUsers = userService.countUsers();
-        long others = Math.max(totalUsers - 1, 0);
-        double percentage = others == 0 ? 0.0 : (reachable * 100.0) / others;
-        return new ReachResponse(reachable, totalUsers, percentage);
-    }
-
-    /**
-     * Generic endpoint for retrieving friends of a user with sorting and calculated mutual metrics.
-     * Supports sorting by: "name" (default), "connections", "mutualFriends".
-     * Supports order: "asc", "desc".
-     */
-    @GetMapping("/{id}/friends")
-    public List<FriendSummaryResponse> getUserFriends(
-            @PathVariable String id,
-            @RequestParam(required = false, defaultValue = "name") String sortBy,
-            @RequestParam(required = false) String order,
-            @AuthenticationPrincipal UUID requestingUserId) {
-        UUID targetId;
-        if ("me".equalsIgnoreCase(id)) {
-            targetId = requestingUserId;
-        } else {
-            try {
-                targetId = UUID.fromString(id);
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException("Invalid user ID: " + id);
-            }
-        }
-        return connectionService.getUserFriends(targetId, requestingUserId, sortBy, order);
+    @DeleteMapping("/me")
+    public void deleteSelf(@AuthenticationPrincipal UUID requestingUserId) {
+        userService.deleteUser(requestingUserId);
     }
 }
-

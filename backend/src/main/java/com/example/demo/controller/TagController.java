@@ -24,27 +24,25 @@ public class TagController {
         return tagService.getAllTags();
     }
 
-    /** Public self-tags on this user, plus (only) the caller's own private tags on them. */
-    @GetMapping("/api/users/{id}/tags")
-    public List<TagAssignmentResponse> getTagsForUser(@PathVariable UUID id, @AuthenticationPrincipal UUID viewerId) {
-        return tagService.getTagsForSubject(id, viewerId);
+    /** The caller's own self-tags (public profile tags) — plan §3's `/api/users/me/tags`. */
+    @GetMapping("/api/users/me/tags")
+    public List<TagAssignmentResponse> getMyTags(@AuthenticationPrincipal UUID userId) {
+        return tagService.getTagsForSubject(userId, userId);
     }
 
-    /**
-     * Returns the subject's tags as the caller now sees them, not just the new one: picking in a
-     * single-select group (age range, gender) also removes the previous pick.
-     */
-    @PostMapping("/api/users/{id}/tags")
-    public List<TagAssignmentResponse> addTag(@PathVariable UUID id, @RequestBody AddTagRequest request,
-                                               @AuthenticationPrincipal UUID taggerId) {
-        tagService.addTag(id, taggerId, request.tagId(), request.customLabel(), request.parentTagId());
-        return tagService.getTagsForSubject(id, taggerId);
+    @PostMapping("/api/users/me/tags")
+    public List<TagAssignmentResponse> addMyTag(@RequestBody AddTagRequest request, @AuthenticationPrincipal UUID userId) {
+        tagService.addTag(userId, userId, request.tagId(), request.customLabel(), request.parentTagId());
+        return tagService.getTagsForSubject(userId, userId);
     }
 
-    @DeleteMapping("/api/users/{id}/tags/{assignmentId}")
-    public ResponseEntity<Void> removeTag(@PathVariable UUID id, @PathVariable UUID assignmentId,
-                                           @AuthenticationPrincipal UUID requestingUserId) {
-        tagService.removeTag(assignmentId, requestingUserId);
+    @DeleteMapping("/api/users/me/tags/{assignmentId}")
+    public ResponseEntity<Void> removeMyTag(@PathVariable UUID assignmentId, @AuthenticationPrincipal UUID userId) {
+        tagService.removeTag(assignmentId, userId);
         return ResponseEntity.noContent().build();
     }
+
+    // Plan §4 P5: GET/POST/DELETE /api/users/{id}/tags for a non-self subject are removed — tags on
+    // someone else now live on that person's *contact* (ContactController/ContactTagService); this
+    // controller only ever tags the caller's own public profile now.
 }

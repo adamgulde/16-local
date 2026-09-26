@@ -87,6 +87,7 @@ class OtpServiceTest {
         lenient().when(twilioVerifyService.getLatestMockCode(phone)).thenReturn("654321");
 
         otpService.sendOtp(phone); // consumes the only token
+        verify(twilioVerifyService).isTestPhoneNumberBypassEnabled(phone);
         verify(twilioVerifyService).sendVerification(phone);
         verify(twilioVerifyService).getLatestMockCode(phone);
         verify(otpRepository).save(any());
@@ -94,6 +95,27 @@ class OtpServiceTest {
         otpService.sendOtp(phone); // budget exhausted — no further dispatch or save
         verifyNoMoreInteractions(twilioVerifyService);
         verify(otpRepository, times(1)).save(any());
+    }
+
+    // --- Fix-up: the 555-000-xxxx test-number bypass must be off unless explicitly enabled -----
+
+    @Test
+    void verifyOtp_bypassCodeForTestNumber_isRejectedWhenBypassDisabled() {
+        String phone = "+1 555-000-0001";
+        when(twilioVerifyService.isTestPhoneNumberBypassEnabled(phone)).thenReturn(false);
+        when(twilioVerifyService.checkVerification(phone, "000000")).thenReturn(false);
+        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
+
+        assertThat(otpService.verifyOtp(phone, "000000")).isFalse();
+    }
+
+    @Test
+    void verifyOtp_bypassCodeForTestNumber_isAcceptedWhenBypassEnabled() {
+        String phone = "+1 555-000-0001";
+        when(twilioVerifyService.isTestPhoneNumberBypassEnabled(phone)).thenReturn(true);
+
+        assertThat(otpService.verifyOtp(phone, "000000")).isTrue();
+        verifyNoInteractions(otpRepository);
     }
 
     @Test

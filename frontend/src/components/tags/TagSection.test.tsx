@@ -53,7 +53,7 @@ describe('TagSection', () => {
     render(<TagSection subjectId="u1" isCurrentUser />);
 
     expect(await screen.findByText('Jazz')).toBeInTheDocument();
-    expect(api.fetchTagsForUser).toHaveBeenCalledWith('u1');
+    expect(api.fetchTagsForUser).toHaveBeenCalledWith('u1', undefined);
   });
 
   it('hands edits back to the directory as functional updates', async () => {

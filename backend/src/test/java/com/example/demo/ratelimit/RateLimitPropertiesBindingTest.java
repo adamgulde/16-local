@@ -23,6 +23,7 @@ class RateLimitPropertiesBindingTest {
                 Map.entry("app.rate-limit.phone.otp-send-per-hour", "4"),
                 Map.entry("app.rate-limit.phone.otp-send-per-day", "12"),
                 Map.entry("app.rate-limit.user.requests-per-minute", "121"),
+                Map.entry("app.rate-limit.user.share-requests-per-day", "17"),
                 Map.entry("app.rate-limit.trusted-proxy-cidrs", "10.0.0.0/8,192.168.0.0/16"),
                 Map.entry("app.rate-limit.max-tracked-keys", "42")
         );
@@ -39,6 +40,7 @@ class RateLimitPropertiesBindingTest {
         assertThat(properties.getPhone().getOtpSendPerHour()).isEqualTo(4);
         assertThat(properties.getPhone().getOtpSendPerDay()).isEqualTo(12);
         assertThat(properties.getUser().getRequestsPerMinute()).isEqualTo(121);
+        assertThat(properties.getUser().getShareRequestsPerDay()).isEqualTo(17);
         assertThat(properties.getTrustedProxyCidrs()).containsExactly("10.0.0.0/8", "192.168.0.0/16");
         assertThat(properties.getMaxTrackedKeys()).isEqualTo(42L);
     }
@@ -56,6 +58,7 @@ class RateLimitPropertiesBindingTest {
         assertThat(properties.getPhone().getOtpSendPerHour()).isEqualTo(3);
         assertThat(properties.getPhone().getOtpSendPerDay()).isEqualTo(10);
         assertThat(properties.getUser().getRequestsPerMinute()).isEqualTo(120);
+        assertThat(properties.getUser().getShareRequestsPerDay()).isEqualTo(20);
         assertThat(properties.getTrustedProxyCidrs()).containsExactly("127.0.0.0/8", "::1", "172.16.0.0/12");
         assertThat(properties.getMaxTrackedKeys()).isEqualTo(100_000L);
     }

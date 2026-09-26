@@ -1,153 +1,145 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
-import { fetchUsers, transformToGraphData, fullName, fetchReach, disconnectUser, updateAutoRejectSetting, type GraphData, type SearchMode, type TagCriteria } from '../services/userService';
-import { EMPTY_TAG_CRITERIA, useUserSearch } from '../hooks/useUserSearch';
-import type { User, ReachResponse } from '../services/userService';
+import { fetchGraph, fetchShareGraph, type Graph, type GraphNode } from '../services/graphService';
+import {
+  createContact,
+  deleteContact,
+  linkContacts,
+  unlinkContacts,
+  updateContact,
+  type CreateContactPayload,
+  type UpdateContactPayload,
+} from '../services/contactService';
 import { fetchAllTags, type TagsUpdate } from '../services/tagService';
-import { sendRequest, fetchMyRequests, acceptRequest, declineRequest, findPath } from '../services/requestService';
+import { putContactNote } from '../services/contactService';
+import type { TagCriteria } from '../services/userService';
+import { buildTagIndex } from '../utils/tagTree';
 import { getSafeErrorMessage } from '../services/apiClient';
-import type { ConnectionRequest } from '../services/types';
-import { computeDistanceFromMe } from './rendering';
-import type { DisplayLink, GNode, GLink } from './rendering';
+import { applyShareModePreview, graphToForceGraphData, contactFullName } from './mapping';
+import { EMPTY_TAG_CRITERIA, findPathBFS, searchGraphNodes, type GraphSearchMode } from './graphSearch';
+import type { GNode, GLink } from './rendering';
+import {
+  cancelShareRequest,
+  deleteShare,
+  fetchSelfProfile,
+  fetchShareRequests,
+  fetchShares,
+  respondToShareRequest,
+  sendShareRequest,
+  setShareHiddenContacts,
+  updatePrivacy,
+  updateSelfProfile,
+  updateShare,
+  type RespondToShareRequestPayload,
+  type SelfProfile,
+  type SendShareRequestPayload,
+  type Share,
+  type ShareRequestsResponse,
+  type SharesResponse,
+  type UpdateSelfProfilePayload,
+  type UpdateSharePayload,
+} from '../services/shareService';
+
+export type { GraphSearchMode as SearchMode };
 
 const GLOBAL_ZOOM_PADDING = 40;
 const LOCATE_ME_ZOOM = 4;
 
-interface Topology {
-  graph: GraphData;
-  distanceFromMe: Map<string, number>;
+const EMPTY_GRAPH: Graph = { nodes: [], edges: [] };
+const EMPTY_SHARE_REQUESTS: ShareRequestsResponse = { incoming: [], outgoing: [] };
+const EMPTY_SHARES: SharesResponse = { sharedByMe: [], sharedWithMe: [] };
+
+// Draft state while editing a share's visibility (PLAN.md §5 F5). `hidden` is the sharer's own
+// working set (persisted via `PUT hidden-contacts` on Save); `locked` mirrors the share's
+// `lockedContactIds` — always hidden, never toggleable, just carried along so the canvas can
+// render them the same way as a hidden node.
+export interface ShareModeState {
+  shareId: string;
+  viewerName: string;
+  hidden: Set<string>;
+  locked: Set<string>;
+  flags: UpdateSharePayload;
 }
-const EMPTY_TOPOLOGY: Topology = { graph: { nodes: [], links: [] }, distanceFromMe: new Map() };
 
 /**
  * Every piece of state, derived data, and handler the graph UI needs — deliberately holds no
  * opinion on layout or presentation, so the desktop (GraphContainer) and mobile (MobileGraphView)
  * renderers can both wrap it in whatever chrome fits their screen without the underlying
- * behavior (physics, search, path-stays-open selection) ever drifting apart
- * between the two.
+ * behavior (physics, search, path-stays-open selection) ever drifting apart between the two.
+ *
+ * Rewired for the private-network overhaul (PLAN.md §5 F2): fetches the owner's `Graph` (self +
+ * contacts + edges) instead of the old global directory, and does search/find-path entirely
+ * client-side over the loaded graph — there is no server directory to query any more.
  */
-export const useGraphController = (
-  currentUser: User,
-  fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>
-) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [requests, setRequests] = useState<ConnectionRequest[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>) => {
+  const [graph, setGraph] = useState<Graph>(EMPTY_GRAPH);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [highlightNodes, setHighlightNodes] = useState<Set<string>>(new Set());
   const [highlightLinks, setHighlightLinks] = useState<Set<string>>(new Set());
   // The currently-open find-path result, as an ordered list of hop ids. Kept separate from
   // highlightNodes/highlightLinks (which it also drives) purely so selecting a node can tell
   // "is this node part of an open path" and decide whether to keep it open — regardless of
-  // whether the tap/click came from the graph itself, a breadcrumb, or a UserCard link.
+  // whether the tap/click came from the graph itself, a breadcrumb, or a card's link.
   const [activePath, setActivePath] = useState<string[] | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showPendingConnections, setShowPendingConnections] = useState(false);
-  const [requestsTab, setRequestsTab] = useState<'received' | 'sent' | 'newUsers'>('received');
 
-  const [maxDistance, setMaxDistance] = useState<number>(Infinity);
-  const [searchMode, setSearchMode] = useState<SearchMode>('names');
+  const [searchMode, setSearchMode] = useState<GraphSearchMode>('names');
   const [tagCriteria, setTagCriteria] = useState<TagCriteria>(EMPTY_TAG_CRITERIA);
-  const [autoRejectDegree, setAutoRejectDegree] = useState<number | null>(currentUser.maxConnectionDegree ?? null);
-  // Rebuilt only when the directory is fetched. The layout depends on nothing but who exists and
-  // who's connected, so editing a bio or tags never hands ForceGraph2D a new graphData to re-lay-out.
-  const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
-  const { graph: baseGraphData, distanceFromMe } = topology;
+  const [tagDictionary, setTagDictionary] = useState<Awaited<ReturnType<typeof fetchAllTags>>>([]);
+  const tagIndex = useMemo(() => buildTagIndex(tagDictionary), [tagDictionary]);
 
-  // Confirmed connections come straight off each user's relationships. Pending ones are only
-  // ever the current user's own (fetchMyRequests is self-scoped by construction), which is
-  // also exactly the privacy rule we want: nobody else's in-progress requests show on the graph.
-  // Kept apart from the pending-link overlay below so that with the (default-off) toggle
-  // disabled, a `requests` change never produces a new graphData object.
-  const graphData = useMemo(() => {
-    if (!showPendingConnections) return baseGraphData;
-    const seen = new Set(baseGraphData.links.map((l) => [l.source, l.target].sort().join('-')));
-    const pendingLinks: DisplayLink[] = [];
-    requests.forEach((req) => {
-      if (req.status !== 'PENDING') return;
-      const key = [req.sender.id, req.receiver.id].sort().join('-');
-      if (seen.has(key)) return;
-      seen.add(key);
-      pendingLinks.push({ source: req.sender.id, target: req.receiver.id, pending: true });
-    });
-    return { nodes: baseGraphData.nodes, links: [...baseGraphData.links, ...pendingLinks] };
-  }, [baseGraphData, requests, showPendingConnections]);
+  const nodesById = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph]);
+  const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null;
+  const selfNode = useMemo(() => graph.nodes.find((n) => n.kind === 'SELF') ?? null, [graph]);
 
-  // One search mode at a time. Text modes feed the suggestion dropdown; Tags mode also dims
-  // every node that doesn't match, so the graph itself becomes the result list.
-  const userSearch = useUserSearch(searchMode, searchTerm, tagCriteria);
+  // Rebuilt only when the graph is (re)fetched or edited. The layout depends on nothing but who
+  // exists and who's connected, so editing a contact's about/tags never hands ForceGraph2D a new
+  // graphData to re-lay-out.
+  const forceGraphData = useMemo(() => graphToForceGraphData(graph), [graph]);
+
   const searchMatches = useMemo(() => {
-    if (searchMode === 'tags') return userSearch.results;
-    if (userSearch.error && searchMode === 'names') {
-      const lower = searchTerm.trim().toLowerCase();
-      return users.filter((u) => fullName(u).toLowerCase().includes(lower)).slice(0, 8);
+    if (searchMode === 'tags') {
+      return searchGraphNodes(graph, 'tags', '', tagCriteria, tagIndex).slice(0, 20);
     }
-    return userSearch.results.slice(0, 8);
-  }, [searchMode, searchTerm, userSearch.results, userSearch.error, users]);
-  const tagMatchIds = useMemo(
-    () => (searchMode === 'tags' && userSearch.active ? new Set(userSearch.results.map((u) => u.id)) : null),
-    [searchMode, userSearch.active, userSearch.results]
+    return searchGraphNodes(graph, searchMode, searchTerm, undefined, tagIndex).slice(0, 8);
+  }, [graph, searchMode, searchTerm, tagCriteria, tagIndex]);
+
+  const tagMatchIds = useMemo(() => {
+    if (searchMode !== 'tags') return null;
+    if (tagCriteria.tagIds.length === 0 && tagCriteria.labels.length === 0) return null;
+    return new Set(searchMatches.map((n) => n.id));
+  }, [searchMode, searchMatches, tagCriteria]);
+
+  // Your own editable contacts (never SELF, never someone else's shared/hidden node) — the pool
+  // offered by "Link to…" (F3).
+  const ownContacts = useMemo(
+    () => graph.nodes.filter((n) => n.editable && n.kind !== 'SELF'),
+    [graph]
   );
 
-  // Only PENDING requests are actionable/notification-worthy — once accepted or declined
-  // (by either party), the outcome is already reflected elsewhere (the graph connection, or
-  // simply nothing), so it drops out of the notification list rather than lingering as a
-  // "Name — ACCEPTED" line with no more actions to take on it.
-  const sentRequests = useMemo(
-    () => requests.filter((req) => req.sender.id === currentUser.id && req.status === 'PENDING'),
-    [requests, currentUser.id]
-  );
-  const receivedRequests = useMemo(
-    () => requests.filter((req) => req.receiver.id === currentUser.id && req.status === 'PENDING'),
-    [requests, currentUser.id]
-  );
-
-  // New users sorted by creation timestamp descending (newest first)
-  const newUsers = useMemo(() => {
-    return [...users]
-      .filter((u) => u.id !== currentUser.id)
-      .sort((a, b) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return timeB - timeA;
+  const linkedIdsFor = useCallback(
+    (nodeId: string) => {
+      const ids = new Set<string>();
+      graph.edges.forEach((e) => {
+        if (e.kind !== 'LINK') return;
+        if (e.source === nodeId) ids.add(e.target);
+        else if (e.target === nodeId) ids.add(e.source);
       });
-  }, [users, currentUser.id]);
-
-  const connectedUserIds = useMemo(() => {
-    const me = users.find((u) => u.id === currentUser.id);
-    return new Set(me?.relationships ?? currentUser.relationships ?? []);
-  }, [users, currentUser.id, currentUser.relationships]);
-
-  const sentRequestUserIds = useMemo(() => {
-    return new Set(sentRequests.map((r) => r.receiver.id));
-  }, [sentRequests]);
-
-  const receivedRequestUserIds = useMemo(() => {
-    return new Set(receivedRequests.map((r) => r.sender.id));
-  }, [receivedRequests]);
-
-  const receivedRequestMap = useMemo(() => {
-    return new Map(receivedRequests.map((r) => [r.sender.id, r.id]));
-  }, [receivedRequests]);
-
-  const getRelationshipNames = useCallback(
-    (relationshipIds: string[]) =>
-      relationshipIds
-        .map((id) => users.find((u) => u.id === id))
-        .filter((u): u is User => Boolean(u))
-        .map(fullName),
-    [users]
+      return ids;
+    },
+    [graph]
   );
 
   const pathBreadcrumb = useMemo(() => {
     if (!activePath) return [];
-    return activePath.map((id) => users.find((u) => u.id === id)).filter((u): u is User => Boolean(u));
-  }, [activePath, users]);
+    return activePath.map((id) => nodesById.get(id)).filter((n): n is GraphNode => Boolean(n));
+  }, [activePath, nodesById]);
 
   // For each hop, the true forward node in path-traversal order, keyed by the unordered pair —
   // lets the renderer draw a correctly-directed arrow regardless of which end the underlying
@@ -163,25 +155,51 @@ export const useGraphController = (
     return map;
   }, [activePath]);
 
-  // Everything the graph shows arrives in this one load: people (with their tags), your requests,
-  // and the tag dictionary. There's no background refresh — only this initial load, your own
-  // actions, and the manual "Refresh Graph Now" re-run it.
+  // F4/F7 state: share requests (mailbox), shares (F5/F6), and the self profile (F7 settings).
+  // Loaded alongside the graph so the mailbox badge count and settings are ready without a
+  // separate round trip the moment their panels open.
+  const [shareRequests, setShareRequests] = useState<ShareRequestsResponse>(EMPTY_SHARE_REQUESTS);
+  const [shares, setShares] = useState<SharesResponse>(EMPTY_SHARES);
+  const [selfProfile, setSelfProfile] = useState<SelfProfile | null>(null);
+
+  const pendingIncomingCount = useMemo(
+    () => shareRequests.incoming.filter((r) => r.status === 'PENDING').length,
+    [shareRequests]
+  );
+
+  // Everything the graph shows arrives in this one load: your graph (self, contacts, edges, any
+  // SHARED overlays), the tag dictionary, share requests, shares and your own profile. There's no
+  // background refresh — only this initial load, your own actions, and the manual
+  // "Refresh Graph Now" re-run it.
   const loadData = useCallback(async () => {
     try {
-      const [usersData, requestsData] = await Promise.all([fetchUsers(), fetchMyRequests(), fetchAllTags()]);
-      setUsers(usersData);
-      setTopology({
-        graph: transformToGraphData(usersData),
-        distanceFromMe: computeDistanceFromMe(usersData, currentUser.id),
-      });
-      setRequests(requestsData);
+      const [graphData, tags, requests, sharesData, profile] = await Promise.all([
+        fetchGraph(),
+        fetchAllTags(),
+        fetchShareRequests(),
+        fetchShares(),
+        fetchSelfProfile(),
+      ]);
+      setGraph(graphData);
+      setTagDictionary(tags);
+      setShareRequests(requests);
+      setShares(sharesData);
+      setSelfProfile(profile);
       setInitError(null);
     } catch {
-      setInitError('Could not load the directory. Please try again.');
+      setInitError('Could not load your graph. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser.id]);
+  }, []);
+
+  const refreshShareRequests = useCallback(async () => {
+    setShareRequests(await fetchShareRequests());
+  }, []);
+
+  const refreshShares = useCallback(async () => {
+    setShares(await fetchShares());
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -193,9 +211,8 @@ export const useGraphController = (
   // this node's direct neighbors instead.
   const selectNode = useCallback(
     (nodeId: string) => {
-      const user = users.find((u) => u.id === nodeId);
-      if (!user) return;
-      setSelectedUser(user);
+      if (!nodesById.has(nodeId)) return;
+      setSelectedId(nodeId);
       setActionError(null);
 
       if (activePath && activePath.includes(nodeId)) {
@@ -205,24 +222,24 @@ export const useGraphController = (
       setActivePath(null);
       const neighbors = new Set<string>([nodeId]);
       const links = new Set<string>();
-      graphData.links.forEach((link) => {
-        if (link.source === nodeId || link.target === nodeId) {
-          links.add(`${link.source}-${link.target}`);
-          neighbors.add(link.source);
-          neighbors.add(link.target);
+      graph.edges.forEach((edge) => {
+        if (edge.source === nodeId || edge.target === nodeId) {
+          links.add(`${edge.source}-${edge.target}`);
+          neighbors.add(edge.source);
+          neighbors.add(edge.target);
         }
       });
       setHighlightNodes(neighbors);
       setHighlightLinks(links);
     },
-    [users, activePath, graphData]
+    [nodesById, activePath, graph]
   );
 
-  // Deselecting (closing the UserCard, tapping/clicking empty background) should never discard
-  // an open path — only clear the neighbor-highlight when there isn't one, otherwise every node
-  // is left dimmed with nothing marked as "the path" anymore.
+  // Deselecting (closing the card, tapping/clicking empty background) should never discard an
+  // open path — only clear the neighbor-highlight when there isn't one, otherwise every node is
+  // left dimmed with nothing marked as "the path" anymore.
   const clearSelection = useCallback(() => {
-    setSelectedUser(null);
+    setSelectedId(null);
     if (activePath) return;
     setHighlightNodes(new Set());
     setHighlightLinks(new Set());
@@ -234,44 +251,41 @@ export const useGraphController = (
     setHighlightLinks(new Set());
   }, []);
 
+  // Client-side BFS over the loaded graph (PLAN.md §3: no more server /path/{targetId}).
   const handleFindPath = useCallback(
-    async (targetId: string) => {
+    (targetId: string) => {
       setActionError(null);
-      try {
-        const ids = await findPath(currentUser.id, targetId);
-        if (ids.length === 0) {
-          setActionError('Could not find a path to this user.');
-          return;
-        }
-        setActivePath(ids);
-        const nodes = new Set(ids);
-        const links = new Set<string>();
-        for (let i = 0; i < ids.length - 1; i++) {
-          links.add(`${ids[i]}-${ids[i + 1]}`);
-          links.add(`${ids[i + 1]}-${ids[i]}`);
-        }
-        setHighlightNodes(nodes);
-        setHighlightLinks(links);
-        fgRef.current?.zoomToFit(600, 60, (n) => nodes.has(String(n.id)));
-      } catch {
-        setActionError('Could not find a path to this user.');
+      const ids = findPathBFS(graph, selfNode?.id ?? '', targetId);
+      if (ids.length === 0) {
+        setActionError('Could not find a path to this person.');
+        return;
       }
+      setActivePath(ids);
+      const nodes = new Set(ids);
+      const links = new Set<string>();
+      for (let i = 0; i < ids.length - 1; i++) {
+        links.add(`${ids[i]}-${ids[i + 1]}`);
+        links.add(`${ids[i + 1]}-${ids[i]}`);
+      }
+      setHighlightNodes(nodes);
+      setHighlightLinks(links);
+      fgRef.current?.zoomToFit(600, 60, (n) => nodes.has(String(n.id)));
     },
-    [currentUser.id, fgRef]
+    [graph, selfNode, fgRef]
   );
 
-  // Selects a user (wherever their name appears — notifications, breadcrumb, a UserCard
-  // connection link) and pans to them on the graph, keeping the current zoom level rather than
-  // jumping to whatever scale would fit their connections.
+  // Selects a node (wherever its name appears — search, breadcrumb, a card's link) and pans to it
+  // on the graph, keeping the current zoom level rather than jumping to whatever scale would fit
+  // its connections.
   const focusUser = useCallback(
     (id: string, durationMs = 500) => {
       selectNode(id);
-      const node = graphData.nodes.find((n) => n.id === id) as GNode | undefined;
-      if (node && node.x != null && node.y != null) {
-        fgRef.current?.centerAt(node.x, node.y, durationMs);
+      const gnode = forceGraphData.nodes.find((n) => n.id === id) as GNode | undefined;
+      if (gnode && gnode.x != null && gnode.y != null) {
+        fgRef.current?.centerAt(gnode.x, gnode.y, durationMs);
       }
     },
-    [selectNode, graphData, fgRef]
+    [selectNode, forceGraphData, fgRef]
   );
 
   const handleSelectSearchResult = useCallback(
@@ -285,12 +299,13 @@ export const useGraphController = (
 
   const handleLocateMe = useCallback(
     (durationMs = 800) => {
-      const node = graphData.nodes.find((n) => n.id === currentUser.id) as GNode | undefined;
-      if (!node || node.x == null || node.y == null) return;
-      fgRef.current?.centerAt(node.x, node.y, durationMs);
+      if (!selfNode) return;
+      const gnode = forceGraphData.nodes.find((n) => n.id === selfNode.id) as GNode | undefined;
+      if (!gnode || gnode.x == null || gnode.y == null) return;
+      fgRef.current?.centerAt(gnode.x, gnode.y, durationMs);
       fgRef.current?.zoom(LOCATE_ME_ZOOM, durationMs);
     },
-    [graphData, currentUser.id, fgRef]
+    [forceGraphData, selfNode, fgRef]
   );
 
   const handleGlobalZoom = useCallback(() => {
@@ -305,193 +320,306 @@ export const useGraphController = (
     [fgRef]
   );
 
-  // --- Global/Personal view + reach% ---
-  const [viewMode, setViewMode] = useState<'global' | 'personal'>('global');
-  const [degree, setDegree] = useState(1);
-  const [reach, setReach] = useState<ReachResponse | null>(null);
-  const [reachLoading, setReachLoading] = useState(false);
-  const [reachError, setReachError] = useState<string | null>(null);
-  const reachSeqRef = useRef(0);
-
-  const loadReach = useCallback(async (userId: string, forDegree: number) => {
-    const seq = ++reachSeqRef.current;
-    setReachLoading(true);
-    setReachError(null);
-    try {
-      const data = await fetchReach(userId, forDegree);
-      if (seq !== reachSeqRef.current) return;
-      setReach(data);
-    } catch {
-      if (seq !== reachSeqRef.current) return;
-      setReachError('Could not load network reach.');
-    } finally {
-      if (seq === reachSeqRef.current) setReachLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (viewMode !== 'personal') return;
-    const timer = window.setTimeout(() => {
-      loadReach(currentUser.id, degree);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [viewMode, degree, currentUser.id, loadReach]);
-
-  // --- Request actions ---
+  // --- Contact CRUD / linking (F3) ---
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
   const pendingActionIdsRef = useRef<Set<string>>(new Set());
 
-  const isActionPending = useCallback(
-    (id: string) => pendingActionIds.has(id),
-    [pendingActionIds]
-  );
+  const isActionPending = useCallback((id: string) => pendingActionIds.has(id), [pendingActionIds]);
 
-  const handleSendRequest = useCallback(
-    async (receiverId: string) => {
-      if (pendingActionIdsRef.current.has(receiverId)) return;
-      pendingActionIdsRef.current.add(receiverId);
+  const withPending = useCallback(async (key: string, action: () => Promise<void>, fallback: string) => {
+    if (pendingActionIdsRef.current.has(key)) return;
+    pendingActionIdsRef.current.add(key);
+    setPendingActionIds(new Set(pendingActionIdsRef.current));
+    setActionError(null);
+    try {
+      await action();
+    } catch (err) {
+      setActionError(getSafeErrorMessage(err, fallback));
+    } finally {
+      pendingActionIdsRef.current.delete(key);
       setPendingActionIds(new Set(pendingActionIdsRef.current));
-      setActionError(null);
-      try {
-        await sendRequest(receiverId);
-        await loadData();
-      } catch (err) {
-        setActionError(getSafeErrorMessage(err, 'Could not send connection request.'));
-      } finally {
-        setTimeout(() => {
-          pendingActionIdsRef.current.delete(receiverId);
-          setPendingActionIds(new Set(pendingActionIdsRef.current));
-        }, 300);
-      }
-    },
-    [loadData]
-  );
-
-  const handleAcceptRequest = useCallback(
-    async (requestId: string) => {
-      if (pendingActionIdsRef.current.has(requestId)) return;
-      pendingActionIdsRef.current.add(requestId);
-      setPendingActionIds(new Set(pendingActionIdsRef.current));
-      setActionError(null);
-      try {
-        await acceptRequest(requestId);
-        await loadData();
-      } catch {
-        setActionError('Could not accept connection request.');
-      } finally {
-        setTimeout(() => {
-          pendingActionIdsRef.current.delete(requestId);
-          setPendingActionIds(new Set(pendingActionIdsRef.current));
-        }, 300);
-      }
-    },
-    [loadData]
-  );
-
-  const handleDeclineRequest = useCallback(
-    async (requestId: string) => {
-      if (pendingActionIdsRef.current.has(requestId)) return;
-      pendingActionIdsRef.current.add(requestId);
-      setPendingActionIds(new Set(pendingActionIdsRef.current));
-      setActionError(null);
-      try {
-        await declineRequest(requestId);
-        await loadData();
-      } catch {
-        setActionError('Could not decline connection request.');
-      } finally {
-        setTimeout(() => {
-          pendingActionIdsRef.current.delete(requestId);
-          setPendingActionIds(new Set(pendingActionIdsRef.current));
-        }, 300);
-      }
-    },
-    [loadData]
-  );
-
-  const handleDisconnect = useCallback(
-    async (targetUserId: string) => {
-      if (pendingActionIdsRef.current.has(targetUserId)) return;
-      pendingActionIdsRef.current.add(targetUserId);
-      setPendingActionIds(new Set(pendingActionIdsRef.current));
-      setActionError(null);
-      try {
-        await disconnectUser(targetUserId);
-        await loadData();
-        if (selectedUser?.id === targetUserId) {
-          setSelectedUser(null);
-          clearSelection();
-        }
-      } catch {
-        setActionError('Could not disconnect user.');
-      } finally {
-        setTimeout(() => {
-          pendingActionIdsRef.current.delete(targetUserId);
-          setPendingActionIds(new Set(pendingActionIdsRef.current));
-        }, 300);
-      }
-    },
-    [loadData, selectedUser, clearSelection]
-  );
-
-  const updatingAutoRejectRef = useRef(false);
-  const [isUpdatingAutoReject, setIsUpdatingAutoReject] = useState(false);
-
-  const handleUpdateAutoReject = useCallback(
-    async (degreeLimit: number | null) => {
-      if (updatingAutoRejectRef.current) return;
-      updatingAutoRejectRef.current = true;
-      setIsUpdatingAutoReject(true);
-      setActionError(null);
-      try {
-        await updateAutoRejectSetting(degreeLimit);
-        setAutoRejectDegree(degreeLimit);
-      } catch {
-        setActionError('Could not update auto-reject setting.');
-      } finally {
-        setTimeout(() => {
-          updatingAutoRejectRef.current = false;
-          setIsUpdatingAutoReject(false);
-        }, 300);
-      }
-    },
-    []
-  );
-
-  const handleBioUpdated = useCallback(
-    (userId: string, newBio: string) => {
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, bio: newBio } : u)));
-      if (userId === currentUser.id) {
-        const stored = localStorage.getItem('authUser');
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            localStorage.setItem('authUser', JSON.stringify({ ...parsed, bio: newBio }));
-          } catch {
-            // ignore
-          }
-        }
-      }
-    },
-    [currentUser.id]
-  );
-
-  // Only `users` (and the open card's copy) change: the graph itself is untouched by tag edits.
-  const updateUserTags = useCallback((userId: string, update: TagsUpdate) => {
-    const apply = (u: User): User => (u.id === userId ? { ...u, tags: update(u.tags ?? []) } : u);
-    setUsers((prev) => prev.map(apply));
-    setSelectedUser((prev) => (prev ? apply(prev) : prev));
+    }
   }, []);
 
-  const updateUserNote = useCallback((userId: string, note: string) => {
-    const apply = (u: User): User => (u.id === userId ? { ...u, note } : u);
-    setUsers((prev) => prev.map(apply));
-    setSelectedUser((prev) => (prev ? apply(prev) : prev));
+  const handleCreateContact = useCallback(
+    (payload: CreateContactPayload) =>
+      withPending(
+        'create-contact',
+        async () => {
+          const created = await createContact(payload);
+          setGraph((prev) => {
+            const self = prev.nodes.find((n) => n.kind === 'SELF');
+            return {
+              nodes: [...prev.nodes, created],
+              edges: self ? [...prev.edges, { source: self.id, target: created.id, kind: 'DIRECT', shareId: null }] : prev.edges,
+            };
+          });
+        },
+        'Could not add this person.'
+      ),
+    [withPending]
+  );
+
+  const handleUpdateContact = useCallback(
+    (id: string, payload: UpdateContactPayload) =>
+      withPending(
+        id,
+        async () => {
+          const updated = await updateContact(id, payload);
+          setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? updated : n)) }));
+        },
+        'Could not save changes.'
+      ),
+    [withPending]
+  );
+
+  const handleDeleteContact = useCallback(
+    (id: string) =>
+      withPending(
+        id,
+        async () => {
+          await deleteContact(id);
+          setGraph((prev) => ({
+            nodes: prev.nodes.filter((n) => n.id !== id),
+            edges: prev.edges.filter((e) => e.source !== id && e.target !== id),
+          }));
+          setSelectedId((prev) => (prev === id ? null : prev));
+        },
+        'Could not delete this contact.'
+      ),
+    [withPending]
+  );
+
+  const handleLinkContacts = useCallback(
+    (a: string, b: string) =>
+      withPending(
+        `link-${[a, b].sort().join('-')}`,
+        async () => {
+          await linkContacts(a, b);
+          setGraph((prev) => ({ ...prev, edges: [...prev.edges, { source: a, target: b, kind: 'LINK', shareId: null }] }));
+        },
+        'Could not link these contacts.'
+      ),
+    [withPending]
+  );
+
+  const handleUnlinkContacts = useCallback(
+    (a: string, b: string) =>
+      withPending(
+        `link-${[a, b].sort().join('-')}`,
+        async () => {
+          await unlinkContacts(a, b);
+          setGraph((prev) => ({
+            ...prev,
+            edges: prev.edges.filter(
+              (e) => !(e.kind === 'LINK' && ((e.source === a && e.target === b) || (e.source === b && e.target === a)))
+            ),
+          }));
+        },
+        'Could not remove this link.'
+      ),
+    [withPending]
+  );
+
+  // Only `graph.nodes` (and the open card's copy, via nodesById) change — the layout itself is
+  // untouched by tag/note edits.
+  const updateContactTags = useCallback((id: string, update: TagsUpdate) => {
+    setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, tags: update(n.tags) } : n)) }));
   }, []);
+
+  const updateContactNote = useCallback((id: string, note: string) => {
+    setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, note } : n)) }));
+  }, []);
+
+  const saveContactNote = useCallback(async (id: string, content: string) => {
+    await putContactNote(id, content);
+  }, []);
+
+  // --- SELF profile editing (F0/self-tags follow-up) ---
+  const handleUpdateSelfProfile = useCallback(
+    (payload: UpdateSelfProfilePayload) =>
+      withPending('self-profile', async () => {
+        const updated = await updateSelfProfile(payload);
+        setGraph((prev) => ({
+          ...prev,
+          nodes: prev.nodes.map((n) =>
+            n.kind === 'SELF' ? { ...n, firstName: updated.firstName, lastName: updated.lastName, about: updated.bio } : n
+          ),
+        }));
+        setSelfProfile(updated);
+      }, 'Could not save your profile.'),
+    [withPending]
+  );
+
+  // --- F4 share requests ---
+  const handleSendShareRequest = useCallback(
+    (payload: SendShareRequestPayload) =>
+      withPending('send-share-request', async () => {
+        await sendShareRequest(payload);
+        await refreshShareRequests();
+      }, 'Could not send this request.'),
+    [withPending, refreshShareRequests]
+  );
+
+  const handleRespondToShareRequest = useCallback(
+    (id: string, payload: RespondToShareRequestPayload) =>
+      withPending(`respond-${id}`, async () => {
+        await respondToShareRequest(id, payload);
+        await refreshShareRequests();
+        // A Connect accept can add a new registered contact/edge on your side; an Allow-view
+        // accept can add a SHARED overlay — either way, only the server knows exactly what
+        // changed, so just refetch (per the brief: "Refetch the graph after an accept").
+        if (payload.connect || payload.allowView) {
+          await loadData();
+        }
+      }, 'Could not respond to this request.'),
+    [withPending, refreshShareRequests, loadData]
+  );
+
+  const handleCancelShareRequest = useCallback(
+    (id: string) =>
+      withPending(`cancel-request-${id}`, async () => {
+        await cancelShareRequest(id);
+        await refreshShareRequests();
+      }, 'Could not cancel this request.'),
+    [withPending, refreshShareRequests]
+  );
+
+  // --- F7 settings ---
+  const handleUpdatePrivacy = useCallback(
+    (value: boolean) =>
+      withPending('update-privacy', async () => {
+        await updatePrivacy(value);
+        setSelfProfile((prev) => (prev ? { ...prev, discoverableInSharedGraphs: value } : prev));
+      }, 'Could not update this setting.'),
+    [withPending]
+  );
+
+  // --- F5 interactive share mode ---
+  const [shareMode, setShareMode] = useState<ShareModeState | null>(null);
+
+  const enterShareMode = useCallback((share: Share) => {
+    setShareMode({
+      shareId: share.id,
+      viewerName: share.viewerName,
+      hidden: new Set(share.hiddenContactIds ?? []),
+      locked: new Set(share.lockedContactIds),
+      flags: {
+        shareAbout: share.shareAbout,
+        shareTags: share.shareTags,
+        shareNotes: share.shareNotes,
+        sharePhone: share.sharePhone,
+      },
+    });
+  }, []);
+
+  const cancelShareMode = useCallback(() => setShareMode(null), []);
+
+  // Tapping a node while in share mode toggles it shared <-> hidden — only for your own
+  // contacts; SELF and locked (opted-out) REGISTERED contacts are not toggleable.
+  const toggleShareModeContact = useCallback(
+    (contactId: string) => {
+      if (!shareMode) return;
+      if (shareMode.locked.has(contactId)) return;
+      const target = nodesById.get(contactId);
+      if (!target || target.kind === 'SELF' || !target.editable) return;
+      setShareMode((prev) => {
+        if (!prev) return prev;
+        const nextHidden = new Set(prev.hidden);
+        if (nextHidden.has(contactId)) nextHidden.delete(contactId);
+        else nextHidden.add(contactId);
+        return { ...prev, hidden: nextHidden };
+      });
+    },
+    [shareMode, nodesById]
+  );
+
+  const setShareModeFlag = useCallback((key: keyof UpdateSharePayload, value: boolean) => {
+    setShareMode((prev) => (prev ? { ...prev, flags: { ...prev.flags, [key]: value } } : prev));
+  }, []);
+
+  const saveShareMode = useCallback(
+    () =>
+      withPending('save-share-mode', async () => {
+        if (!shareMode) return;
+        const { shareId, hidden, flags } = shareMode;
+        await Promise.all([
+          setShareHiddenContacts(shareId, [...hidden]),
+          updateShare(shareId, flags),
+        ]);
+        await refreshShares();
+        setShareMode(null);
+      }, 'Could not save sharing changes.'),
+    [withPending, shareMode, refreshShares]
+  );
+
+  const revokeShare = useCallback(
+    (shareId: string) =>
+      withPending(`revoke-share-${shareId}`, async () => {
+        await deleteShare(shareId);
+        await refreshShares();
+        setShareMode((prev) => (prev && prev.shareId === shareId ? null : prev));
+      }, 'Could not revoke this share.'),
+    [withPending, refreshShares]
+  );
+
+  // The ids the canvas should *draw* as "Hidden User" while share mode is active (hidden/locked
+  // contacts) — rendering-only, never a different `graphData` object: `forceGraphData` itself is
+  // always what's handed to ForceGraph2D, in share mode or not, so toggling a node never hands
+  // the graph a structurally new object and never re-triggers STATIC_LAYOUT (see mapping.ts).
+  const shareModePreviewIds = useMemo(() => {
+    if (!shareMode) return null;
+    return applyShareModePreview(forceGraphData, shareMode.hidden, shareMode.locked);
+  }, [forceGraphData, shareMode]);
+
+  // --- F6 "Other's graphs" (read-only) ---
+  const [viewingShare, setViewingShare] = useState<Share | null>(null);
+  const [viewingGraph, setViewingGraph] = useState<Graph | null>(null);
+  const [viewingGraphLoading, setViewingGraphLoading] = useState(false);
+  const [viewingGraphError, setViewingGraphError] = useState<string | null>(null);
+
+  const viewingForceGraphData = useMemo(
+    () => (viewingGraph ? graphToForceGraphData(viewingGraph) : null),
+    [viewingGraph]
+  );
+
+  const openOtherGraph = useCallback(async (share: Share) => {
+    setViewingShare(share);
+    setViewingGraph(null);
+    setViewingGraphError(null);
+    setViewingGraphLoading(true);
+    try {
+      const g = await fetchShareGraph(share.id);
+      setViewingGraph(g);
+    } catch (err) {
+      setViewingGraphError(getSafeErrorMessage(err, "Could not load this person's graph."));
+    } finally {
+      setViewingGraphLoading(false);
+    }
+  }, []);
+
+  const closeOtherGraph = useCallback(() => {
+    setViewingShare(null);
+    setViewingGraph(null);
+    setViewingGraphError(null);
+  }, []);
+
+  const removeOtherGraph = useCallback(
+    (shareId: string) =>
+      withPending(`remove-share-${shareId}`, async () => {
+        await deleteShare(shareId);
+        await refreshShares();
+        setViewingShare((prev) => (prev && prev.id === shareId ? null : prev));
+        if (viewingShare?.id === shareId) {
+          setViewingGraph(null);
+        }
+      }, 'Could not remove this share.'),
+    [withPending, refreshShares, viewingShare]
+  );
 
   // Escape (or a mobile "back"/close affordance calling the same setter) closes whatever's
-  // currently "open," most-transient first: the search dropdown, then the selected-user card,
-  // then an open find-path result.
+  // currently "open," most-transient first: the search dropdown, then the selected card, then an
+  // open find-path result.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -499,7 +627,7 @@ export const useGraphController = (
         setShowSuggestions(false);
         return;
       }
-      if (selectedUser) {
+      if (selectedId) {
         clearSelection();
         return;
       }
@@ -509,22 +637,21 @@ export const useGraphController = (
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSuggestions, selectedUser, activePath, clearSelection, handleClearPath]);
+  }, [showSuggestions, selectedId, activePath, clearSelection, handleClearPath]);
 
   return {
     // data
-    users,
-    requests,
-    graphData,
-    distanceFromMe,
-    sentRequests,
-    receivedRequests,
+    graph,
+    forceGraphData,
+    nodesById,
+    selfNode,
+    ownContacts,
+    linkedIdsFor,
     pathBreadcrumb,
     pathLinkTarget,
     searchMatches,
-    getRelationshipNames,
     // selection/path state
-    selectedUser,
+    selectedNode,
     highlightNodes,
     highlightLinks,
     activePath,
@@ -538,25 +665,10 @@ export const useGraphController = (
     tagCriteria,
     setTagCriteria,
     tagMatchIds,
-    searchLoading: userSearch.loading,
-    maxDistance,
-    setMaxDistance,
-    autoRejectDegree,
     isLoading,
     initError,
     actionError,
     setActionError,
-    showPendingConnections,
-    setShowPendingConnections,
-    requestsTab,
-    setRequestsTab,
-    viewMode,
-    setViewMode,
-    degree,
-    setDegree,
-    reach,
-    reachLoading,
-    reachError,
     // actions
     loadData,
     selectNode,
@@ -568,23 +680,53 @@ export const useGraphController = (
     handleLocateMe,
     handleGlobalZoom,
     handleZoomStep,
-    handleSendRequest,
-    handleAcceptRequest,
-    handleDeclineRequest,
-    handleDisconnect,
-    handleUpdateAutoReject,
-    handleBioUpdated,
-    updateUserTags,
-    updateUserNote,
+    handleCreateContact,
+    handleUpdateContact,
+    handleDeleteContact,
+    handleLinkContacts,
+    handleUnlinkContacts,
+    updateContactTags,
+    updateContactNote,
+    saveContactNote,
     pendingActionIds,
     isActionPending,
-    isUpdatingAutoReject,
-    newUsers,
-    connectedUserIds,
-    sentRequestUserIds,
-    receivedRequestUserIds,
-    receivedRequestMap,
+    // SELF profile editing
+    handleUpdateSelfProfile,
+    // F4 share requests
+    shareRequests,
+    pendingIncomingCount,
+    refreshShareRequests,
+    handleSendShareRequest,
+    handleRespondToShareRequest,
+    handleCancelShareRequest,
+    // F7 settings
+    selfProfile,
+    handleUpdatePrivacy,
+    // F5/F6 shares
+    shares,
+    refreshShares,
+    // F5 interactive share mode
+    shareMode,
+    shareModePreviewIds,
+    enterShareMode,
+    cancelShareMode,
+    toggleShareModeContact,
+    setShareModeFlag,
+    saveShareMode,
+    revokeShare,
+    // F6 "Other's graphs"
+    viewingShare,
+    viewingGraph,
+    viewingForceGraphData,
+    viewingGraphLoading,
+    viewingGraphError,
+    openOtherGraph,
+    closeOtherGraph,
+    removeOtherGraph,
   };
 };
 
 export type GraphController = ReturnType<typeof useGraphController>;
+
+// Re-exported for views that only need a display name off a GraphNode.
+export { contactFullName };

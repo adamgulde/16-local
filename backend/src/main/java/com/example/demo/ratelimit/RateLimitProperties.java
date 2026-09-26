@@ -56,5 +56,7 @@ public class RateLimitProperties {
     @Setter
     public static class User {
         private int requestsPerMinute = 120;
+        /** Share requests a single user may send per day (plan §2 S1 / §4 P3). */
+        private int shareRequestsPerDay = 20;
     }
 }

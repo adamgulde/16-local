@@ -1,14 +1,13 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-graph-2d';
-import type { Node, Link, User } from '../services/userService';
+import type { ForceGraphLink, ForceGraphNode } from './mapping';
 
-export interface LinkExtra {
-  pending?: boolean;
-}
+// The extra properties LinkObject merges alongside the resolved source/target node refs.
+export type LinkExtra = Pick<ForceGraphLink, 'kind' | 'shareId'>;
 
-export type GNode = NodeObject<Node>;
-export type GLink = LinkObject<Node, LinkExtra>;
-export type DisplayLink = Link & LinkExtra;
+export type GNode = NodeObject<ForceGraphNode>;
+export type GLink = LinkObject<ForceGraphNode, LinkExtra>;
+export type DisplayLink = ForceGraphLink;
 
 export const nodeRefId = (ref: string | number | GNode | undefined): string => {
   if (ref == null) return '';
@@ -20,96 +19,58 @@ export const nodeRefId = (ref: string | number | GNode | undefined): string => {
 // once there are 100+ nodes on screen, far more than the circles themselves.
 export const LABEL_VISIBILITY_SCALE = 0.6;
 
-// Node color reflects degree of separation from the current user, not raw connection count:
-// direct connections (degree 1) are green, fading toward white by degree 10 and beyond (or if
-// unreachable). The current user's own node is colored separately by each renderer.
-export const DEGREE_FADE_MAX = 6;
-export const CURRENT_USER_COLOR = '#3d8bff';
-export const FIRST_DEGREE_COLOR = '#22c55e';
-export const OTHER_DEGREE_COLOR = '#9ca3af';
+// Node color reflects kind (PLAN.md §5 F2), not degree of separation — the private graph has no
+// meaningful notion of "how many hops from me" once hidden/shared overlays are in the mix.
+export const SELF_COLOR = '#3d8bff';
+export const REGISTERED_COLOR = '#22c55e';
+export const PLACEHOLDER_COLOR = '#9ca3af';
+export const HIDDEN_COLOR = '#5a5a60';
+export const SHARED_TINT = '#e0a94c';
 
-export const colorForDistance = (distance: number | undefined): string => {
-  if (distance === 1) return FIRST_DEGREE_COLOR;
-  return OTHER_DEGREE_COLOR;
+export const colorForNode = (node: Pick<ForceGraphNode, 'kind' | 'sharerName'>): string => {
+  if (node.kind === 'HIDDEN') return HIDDEN_COLOR;
+  if (node.sharerName) return SHARED_TINT;
+  if (node.kind === 'SELF') return SELF_COLOR;
+  if (node.kind === 'REGISTERED') return REGISTERED_COLOR;
+  return PLACEHOLDER_COLOR;
 };
 
-// BFS distance from the current user, over confirmed connections only (pending requests don't
-// count as a real degree of separation) — drives the green-to-white node coloring and the
-// per-node repulsion below.
-export const computeDistanceFromMe = (users: User[], currentUserId: string): Map<string, number> => {
-  const dist = new Map<string, number>();
-  dist.set(currentUserId, 0);
-  const byId = new Map(users.map((u) => [u.id, u]));
-  const queue = [currentUserId];
-  while (queue.length > 0) {
-    const curId = queue.shift()!;
-    const d = dist.get(curId)!;
-    const cur = byId.get(curId);
-    if (!cur) continue;
-    cur.relationships.forEach((relId) => {
-      if (!dist.has(relId)) {
-        dist.set(relId, d + 1);
-        queue.push(relId);
-      }
-    });
-  }
-  return dist;
-};
-
-// Per-node repulsion grows with BFS distance from the current user, so distant shells push
-// further apart than close ones — a true pairwise "repel harder the further apart these two
-// specific nodes are" would need a custom O(n²) force, giving up forceManyBody's Barnes-Hut
-// optimization (and the framerate work that fixed the zoomed-out lag), so this reuses the same
-// per-node distanceFromMe map that already drives node color instead.
-const CHARGE_BASE = -30;
-const CHARGE_DEGREE_STEP = 9;
-const LINK_DISTANCE = 20;
+const CHARGE = -60;
+const LINK_DISTANCE = 30;
 
 // The layout is computed synchronously before the first frame is drawn and never animates:
 // d3's default cooling (alpha 1 → 0.001) takes 300 ticks, and cooldownTicks={0} stops the
 // engine right after, so the graph first appears already at rest. Spread into ForceGraph2D.
 export const STATIC_LAYOUT = { warmupTicks: 300, cooldownTicks: 0 } as const;
 
-/** Wires the charge/link forces to distanceFromMe — identical physics for every renderer. */
+/** Wires the charge/link forces — identical physics for every renderer. Private graphs are small
+ * (contacts, not a whole directory), so a flat charge/link strength is enough; no more per-node
+ * "distance from me" repulsion, which had no equivalent once hidden/shared nodes exist. */
 export const useGraphPhysics = (
   fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
-  links: DisplayLink[],
-  distanceFromMe: Map<string, number>
+  links: DisplayLink[]
 ) => {
   // A layout effect, not a passive one: force-graph runs its warmup in a debounced digest after
   // receiving new graphData, and the forces must be in place before that or the static layout
   // is computed with d3's defaults.
   useLayoutEffect(() => {
-    fgRef.current?.d3Force('charge')?.strength((node: GNode) => {
-      const distance = distanceFromMe.get(String(node.id)) ?? DEGREE_FADE_MAX;
-      return CHARGE_BASE - CHARGE_DEGREE_STEP * Math.min(distance, DEGREE_FADE_MAX);
-    });
+    fgRef.current?.d3Force('charge')?.strength(CHARGE);
 
-    // Confirmed-link degree per node, so strength can replicate d3-force's own default
-    // (1 / min(sourceDegree, targetDegree)) instead of a flat value — a flat strength=1
-    // overrides that degree-normalization and lets high-degree "hub" nodes get pulled in far
-    // tighter than intended, slowly collapsing the whole graph over a long simulation run
-    // (didn't show up in short test windows, only after minutes of real running time).
     const degree = new Map<string, number>();
     links.forEach((l) => {
-      if (l.pending) return;
       degree.set(l.source, (degree.get(l.source) ?? 0) + 1);
       degree.set(l.target, (degree.get(l.target) ?? 0) + 1);
     });
 
-    // Pending connections are drawn (see linkColor/linkLineDash below) but must not actually
-    // pull the two people together — a strength of 0 makes forceLink treat that link as purely
-    // decorative, contributing no attraction, unlike a confirmed connection.
     fgRef.current
       ?.d3Force('link')
       ?.distance(LINK_DISTANCE)
       .strength((link: GLink) => {
-        if (link.pending) return 0;
         const s = degree.get(nodeRefId(link.source as string | GNode)) ?? 1;
         const t = degree.get(nodeRefId(link.target as string | GNode)) ?? 1;
         return 1 / Math.min(s, t);
       });
-  }, [links, distanceFromMe, fgRef]);
+  }, [links, fgRef]);
 };
 
 export const drawGrid = (ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -164,32 +125,33 @@ export const drawGrid = (ctx: CanvasRenderingContext2D, globalScale: number) => 
 };
 
 interface NodeCanvasOptions {
-  currentUserId: string;
-  distanceFromMe: Map<string, number>;
   highlightNodes: Set<string>;
   activePath: string[] | null;
-  maxDistance?: number;
   filterNodes?: Set<string> | null;
+  // F5 interactive share mode: ids that should *draw* as "Hidden User" while the sharer is
+  // previewing what a viewer would see. Deliberately just a display override, never a different
+  // `node.kind`/`node.name` and never a different `graphData` object — see applyShareModePreview
+  // in mapping.ts for why (STATIC_LAYOUT must never re-run just to preview a toggle).
+  previewHiddenIds?: ReadonlySet<string> | null;
 }
 
-/** Identical node draw logic for every renderer — dimming, degree color, zoom-scaled radius. */
+/** Identical node draw logic for every renderer — dimming, kind color/outline, zoom-scaled radius,
+ * per PLAN.md §5 F2: SELF distinct, PLACEHOLDER dashed outline, REGISTERED solid, HIDDEN grey
+ * "Hidden User", SHARED tinted (name already carries the "via {sharer}" suffix — see mapping.ts). */
 export const drawNode = (
   node: GNode,
   ctx: CanvasRenderingContext2D,
   globalScale: number,
-  { currentUserId, distanceFromMe, highlightNodes, activePath, maxDistance = Infinity, filterNodes = null }: NodeCanvasOptions
+  { highlightNodes, activePath, filterNodes = null, previewHiddenIds = null }: NodeCanvasOptions
 ) => {
   const idStr = String(node.id);
   const isHighlighted = highlightNodes.has(idStr);
-  const isMe = node.id === currentUserId;
-  const dist = isMe ? 0 : distanceFromMe.get(idStr);
-  const isBeyondDistance = maxDistance !== Infinity && (dist === undefined || dist > maxDistance);
-  const isFilteredOut = filterNodes !== null && !filterNodes.has(idStr) && !isMe;
-  // When a path is open, everything not on that path fades.
-  // When maxDistance is set, nodes beyond maxDistance fade out.
-  // When a tag filter is active, non-matching nodes fade out.
-  const dimmed = (activePath !== null && !isHighlighted) || (isBeyondDistance && !isHighlighted) || isFilteredOut;
-  const nodeColor = isMe ? CURRENT_USER_COLOR : colorForDistance(dist);
+  const isFilteredOut = filterNodes !== null && !filterNodes.has(idStr) && node.kind !== 'SELF';
+  const dimmed = (activePath !== null && !isHighlighted) || isFilteredOut;
+  const isPreviewHidden = previewHiddenIds?.has(idStr) ?? false;
+  const displayKind = isPreviewHidden ? 'HIDDEN' : node.kind;
+  const displayName = isPreviewHidden ? 'Hidden User' : node.name;
+  const nodeColor = isPreviewHidden ? HIDDEN_COLOR : colorForNode(node);
   const radius = (isHighlighted ? 12 : 8) / globalScale;
 
   ctx.globalAlpha = dimmed ? 0.15 : 1;
@@ -198,8 +160,17 @@ export const drawNode = (
   // any zoom level instead of ballooning to fill the screen when zoomToFit lands on a tightly-
   // clustered set.
   ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-  ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
-  ctx.fill();
+  if (displayKind === 'PLACEHOLDER') {
+    // Placeholder (no account) — hollow, dashed outline instead of a solid fill.
+    ctx.setLineDash([3 / globalScale, 2 / globalScale]);
+    ctx.lineWidth = 1.5 / globalScale;
+    ctx.strokeStyle = isHighlighted ? 'red' : nodeColor;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
+    ctx.fill();
+  }
 
   // Skip labels if dimmed, or once zoomed out far enough that they'd be unreadable clutter
   if (!dimmed && (isHighlighted || globalScale > LABEL_VISIBILITY_SCALE)) {
@@ -208,7 +179,7 @@ export const drawNode = (
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = isHighlighted ? 'red' : '#f0f0f0';
-    ctx.fillText(node.name, node.x!, node.y! + radius + 1 / globalScale);
+    ctx.fillText(displayName, node.x!, node.y! + radius + 1 / globalScale);
   }
   ctx.globalAlpha = 1;
 };
@@ -238,44 +209,34 @@ export const paintNodePointerArea = (
 interface LinkColorOptions {
   highlightLinks: Set<string>;
   activePath: string[] | null;
-  maxDistance?: number;
-  distanceFromMe?: Map<string, number>;
   filterNodes?: Set<string> | null;
 }
 
-/** Identical link color logic for every renderer — highlight, dimming, pending vs. confirmed. */
+/** Identical link color logic for every renderer — highlight, dimming, and a distinct look per
+ * edge kind: DIRECT solid, LINK dashed, SHARED tinted+dashed (an overlay edge, not yours). */
 export const linkColorFor = (
   link: GLink,
-  { highlightLinks, activePath, maxDistance = Infinity, distanceFromMe, filterNodes = null }: LinkColorOptions
+  { highlightLinks, activePath, filterNodes = null }: LinkColorOptions
 ): string => {
   const sourceId = nodeRefId(link.source as string | GNode);
   const targetId = nodeRefId(link.target as string | GNode);
   const isHighlighted = highlightLinks.has(`${sourceId}-${targetId}`) || highlightLinks.has(`${targetId}-${sourceId}`);
   if (isHighlighted) return 'red';
 
-  let isBeyondDistance = false;
-  if (maxDistance !== Infinity && distanceFromMe) {
-    const sDist = distanceFromMe.get(sourceId);
-    const tDist = distanceFromMe.get(targetId);
-    if (sDist === undefined || sDist > maxDistance || tDist === undefined || tDist > maxDistance) {
-      isBeyondDistance = true;
-    }
-  }
-
   const isFilteredOut = filterNodes !== null && (!filterNodes.has(sourceId) || !filterNodes.has(targetId));
-  const dimmed = activePath !== null || isBeyondDistance || isFilteredOut;
-  const base: [number, number, number] = link.pending ? [102, 102, 102] : [200, 210, 220];
+  const dimmed = activePath !== null || isFilteredOut;
+  const base: [number, number, number] = link.kind === 'SHARED' ? [224, 169, 76] : [200, 210, 220];
   return `rgba(${base[0]}, ${base[1]}, ${base[2]}, ${dimmed ? 0.08 : 0.8})`;
 };
 
-export const linkLineDashFor = (link: GLink): number[] | null => (link.pending ? [4, 4] : null);
+export const linkLineDashFor = (link: GLink): number[] | null => (link.kind === 'DIRECT' ? null : [4, 4]);
 
 // Drawn 'after' the default line, only for links on the currently-open path — the underlying
-// link's source/target order is arbitrary (whichever user's relationship transformToGraphData
-// happened to iterate first), so a built-in linkDirectionalArrow* prop can't be trusted to point
-// the right way; pathLinkTarget instead records the true forward node (in path-traversal order)
-// per hop, keyed by the unordered pair, so the arrow is drawn along the path's actual direction
-// regardless of which end the link data calls "source".
+// link's source/target order is arbitrary (whichever edge the mapping happened to iterate first),
+// so a built-in linkDirectionalArrow* prop can't be trusted to point the right way; pathLinkTarget
+// instead records the true forward node (in path-traversal order) per hop, keyed by the unordered
+// pair, so the arrow is drawn along the path's actual direction regardless of which end the link
+// data calls "source".
 export const drawPathArrow = (
   link: GLink,
   ctx: CanvasRenderingContext2D,

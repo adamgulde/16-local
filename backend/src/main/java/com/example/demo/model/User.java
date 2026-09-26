@@ -7,7 +7,7 @@ import lombok.*;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users", indexes = @Index(name = "idx_users_map_index", columnList = "map_index"))
+@Table(name = "users")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -38,33 +38,21 @@ public class User {
     @Column(length = 2000)
     private String bio;
 
-    /** Maximum degree of separation allowed for incoming connection requests; null means accept all. */
-    private Integer maxConnectionDegree;
-
-    /** Whether this user is a default seeded demo user. Default users auto-accept connection requests. */
-    @Column(nullable = false, columnDefinition = "boolean default false")
-    @Builder.Default
-    private boolean defaultUser = false;
-
-    public boolean isDefaultUser() {
-        return defaultUser || (phoneNumber != null && phoneNumber.startsWith("+1 555-000-"));
-    }
-
+    /**
+     * Every user still needs one (the column is NOT NULL) but the global map is gone (plan §4 P5):
+     * new registrations are simply assigned the one shared default neighborhood (see
+     * {@code PlacementService#defaultNeighborhood}), and nothing reads this for placement any more.
+     * {@code maxConnectionDegree}/{@code defaultUser}/{@code localIndex}/{@code mapIndex}/
+     * {@code mapX}/{@code mapY} columns still exist (kept until a later V7 migration drops them)
+     * but are no longer mapped here at all — nothing reads or writes them any more.
+     */
     @ManyToOne(optional = false)
     @JoinColumn(name = "neighborhood_curve_index")
     private Neighborhood neighborhood;
 
-    /** This user's join order within their neighborhood — the low-order bits of mapIndex. */
-    @Column(name = "local_index")
-    private Long localIndex;
-
-    /** The single combined Hilbert index this user is placed at; see HilbertCurve. */
-    @Column(name = "map_index")
-    private Long mapIndex;
-
-    @Column(name = "map_x")
-    private Long mapX;
-
-    @Column(name = "map_y")
-    private Long mapY;
+    /** Whether a registered contact of this user may be shown as themselves (not Hidden User) to a
+     *  third party viewing a shared graph. Default off — see plan §1.5. */
+    @Column(name = "discoverable_in_shared_graphs", nullable = false)
+    @Builder.Default
+    private boolean discoverableInSharedGraphs = false;
 }

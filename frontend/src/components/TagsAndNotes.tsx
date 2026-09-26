@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchNote, saveNote } from '../services/noteService';
 import { dividerStyle, sectionHeaderStyle } from './cardStyles';
 import { TagSection } from './tags/TagSection';
 import type { TagAssignment, TagsUpdate } from '../services/tagService';
@@ -9,10 +8,15 @@ interface TagsAndNotesProps {
   isCurrentUser: boolean;
   tags?: TagAssignment[] | null;
   onTagsChange?: (update: TagsUpdate) => void;
-  // Preloaded note from the directory; "" if none, null if not loaded (columns view).
+  // The contact's note, as loaded with the graph ("" if none) — a contact's note only ever
+  // arrives on its `GraphNode` (PLAN.md §3); there's no separate fetch-by-id endpoint.
   note?: string | null;
-  // Called when the note is saved in a preloaded view.
+  // Called when the note is saved, so the caller's copy of the node stays in sync.
   onNoteChange?: (note: string) => void;
+  // '/api/users' (default) or '/api/contacts' — see TagSection.
+  endpointBase?: string;
+  // Saves the note — the contact editor (ContactCard, F3) passes `PUT /api/contacts/{id}/note`.
+  onSaveNote?: (subjectId: string, content: string) => Promise<void>;
 }
 
 export const TagsAndNotes = ({
@@ -22,33 +26,22 @@ export const TagsAndNotes = ({
   onTagsChange,
   note,
   onNoteChange,
+  endpointBase,
+  onSaveNote,
 }: TagsAndNotesProps) => {
-  const preloadedNote = note != null;
+  const savedNoteValue = note ?? '';
   const [noteError, setNoteError] = useState<string | null>(null);
-  const [savedNote, setSavedNote] = useState(preloadedNote ? note : '');
-  const [noteDraft, setNoteDraft] = useState(preloadedNote ? note : '');
+  const [savedNote, setSavedNote] = useState(savedNoteValue);
+  const [noteDraft, setNoteDraft] = useState(savedNoteValue);
   const [editingNote, setEditingNote] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
   const noteSavingRef = useRef(false);
 
   useEffect(() => {
-    if (preloadedNote) {
-      setSavedNote(note!);
-      setNoteDraft(note!);
-      setEditingNote(false);
-    } else if (!isCurrentUser) {
-      fetchNote(subjectId)
-        .then((content) => {
-          setSavedNote(content);
-          setNoteDraft(content);
-        })
-        .catch(() => {});
-    } else {
-      setSavedNote('');
-      setNoteDraft('');
-      setEditingNote(false);
-    }
-  }, [subjectId, isCurrentUser, preloadedNote, note]);
+    setSavedNote(savedNoteValue);
+    setNoteDraft(savedNoteValue);
+    setEditingNote(false);
+  }, [subjectId, savedNoteValue]);
 
   const handleSaveNote = async () => {
     if (noteSavingRef.current) return;
@@ -56,7 +49,8 @@ export const TagsAndNotes = ({
     setNoteSaving(true);
     setNoteError(null);
     try {
-      await saveNote(subjectId, noteDraft);
+      if (!onSaveNote) throw new Error('No save handler provided for this note.');
+      await onSaveNote(subjectId, noteDraft);
       setSavedNote(noteDraft);
       setEditingNote(false);
       onNoteChange?.(noteDraft);
@@ -78,6 +72,7 @@ export const TagsAndNotes = ({
         isCurrentUser={isCurrentUser}
         tags={tags}
         onTagsChange={onTagsChange}
+        endpointBase={endpointBase}
       />
 
       {/* Private Notes Section (on other users only) */}

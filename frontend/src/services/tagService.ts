@@ -64,10 +64,16 @@ export const fetchAllTags = (): Promise<Tag[]> => {
 // that doesn't wait a tick on an already-resolved promise.
 export const peekAllTags = (): Tag[] | null => allTags;
 
+// Default endpoint base for the (self/other-user) directory tags. The graph's contact editor
+// (ContactCard, F3) passes '/api/contacts' instead — same shapes, same picker, different subject
+// kind (PLAN.md §3: `GET/POST/DELETE /api/contacts/{id}/tags[/{assignmentId}]`, "as today's
+// `/api/users/{id}/tags`").
+const DEFAULT_TAG_BASE = '/api/users';
+
 // Public self-tags on this user, plus (only) your own private tags on them. The graph gets these
 // with the directory; only views without it (columns) fetch per person.
-export const fetchTagsForUser = async (subjectId: string): Promise<TagAssignment[]> => {
-  const response = await apiClient.get<TagAssignment[]>(`/api/users/${subjectId}/tags`);
+export const fetchTagsForUser = async (subjectId: string, base = DEFAULT_TAG_BASE): Promise<TagAssignment[]> => {
+  const response = await apiClient.get<TagAssignment[]>(`${base}/${subjectId}/tags`);
   return response.data;
 };
 
@@ -75,12 +81,17 @@ export const fetchTagsForUser = async (subjectId: string): Promise<TagAssignment
 // (age range, gender) replaces the earlier one, so the response is the whole list.
 export const addTagToUser = async (
   subjectId: string,
-  payload: AddTagPayload
+  payload: AddTagPayload,
+  base = DEFAULT_TAG_BASE
 ): Promise<TagAssignment[]> => {
-  const response = await apiClient.post<TagAssignment[]>(`/api/users/${subjectId}/tags`, payload);
+  const response = await apiClient.post<TagAssignment[]>(`${base}/${subjectId}/tags`, payload);
   return response.data;
 };
 
-export const removeTagFromUser = async (subjectId: string, assignmentId: string): Promise<void> => {
-  await apiClient.delete(`/api/users/${subjectId}/tags/${assignmentId}`);
+export const removeTagFromUser = async (
+  subjectId: string,
+  assignmentId: string,
+  base = DEFAULT_TAG_BASE
+): Promise<void> => {
+  await apiClient.delete(`${base}/${subjectId}/tags/${assignmentId}`);
 };
