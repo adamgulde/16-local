@@ -6,6 +6,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.mobile
 
 # Build artifacts
 dist/
@@ -38,4 +39,8 @@ certs/
 
 # Working scratch
 .phone-number-encryption/
+
+# Firebase config (native, must be supplied per-environment; never commit)
+frontend/android/app/google-services.json
+frontend/ios/App/App/GoogleService-Info.plist
 

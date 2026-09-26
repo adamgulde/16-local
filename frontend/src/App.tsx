@@ -7,6 +7,7 @@ import { Login } from './components/auth/Login';
 import { Register } from './components/auth/Register';
 import { Instructions } from './components/Instructions';
 import { NotFound } from './components/NotFound';
+import { MobilePushBridge } from './components/MobilePushBridge';
 import type { User } from './services/userService';
 import { loadSessionUser } from './services/authService';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -102,6 +103,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <MobilePushBridge currentUserId={currentUser?.id ?? null} />
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
         <Routes>
           <Route path="/" element={

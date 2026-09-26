@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ConnectionsBetween.Us</string>
+    <string name="title_activity_main">ConnectionsBetween.Us</string>
+    <string name="package_name">us.connectionsbetween.app</string>
+    <string name="custom_url_scheme">us.connectionsbetween.app</string>
+</resources>

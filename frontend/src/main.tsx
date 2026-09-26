@@ -1,8 +1,25 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Capacitor } from '@capacitor/core'
+import { StatusBar, Style } from '@capacitor/status-bar'
 import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
+
+if (Capacitor.isNativePlatform()) {
+  document.documentElement.classList.add('native');
+
+  (async () => {
+    try {
+      await StatusBar.setStyle({ style: Style.Dark });
+      if (Capacitor.getPlatform() === 'android') {
+        await StatusBar.setBackgroundColor({ color: '#121214' });
+      }
+    } catch (err) {
+      console.warn('StatusBar setup failed (continuing):', err);
+    }
+  })();
+}
 
 // Global trap for uncaught promise rejections across the application
 window.addEventListener('unhandledrejection', (event) => {

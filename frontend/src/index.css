@@ -153,3 +153,19 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* Native (Capacitor) shell only — do not apply to the web build */
+html.native {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html.native body {
+  user-select: none;
+}
+
+html.native input,
+html.native textarea,
+html.native [contenteditable] {
+  user-select: text;
+}

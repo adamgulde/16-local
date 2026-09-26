@@ -86,6 +86,16 @@ public class SecurityConfig {
             }
         }
 
+        // Native WebView origins for the bundled Capacitor app (iOS uses capacitor://, Android uses
+        // https://localhost) — fixed, not derived from dev/config, since the mobile app always ships
+        // as bundled assets rather than a real web origin.
+        List<String> nativeAppOrigins = List.of("capacitor://localhost", "https://localhost");
+        for (String nativeOrigin : nativeAppOrigins) {
+            if (!patterns.contains(nativeOrigin)) {
+                patterns.add(nativeOrigin);
+            }
+        }
+
         configuration.setAllowedOriginPatterns(patterns);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         configuration.setAllowedHeaders(List.of("*"));

@@ -39,6 +39,15 @@ public class CorsConfig implements WebMvcConfigurer {
             }
         }
 
+        // Native WebView origins for the bundled Capacitor app (iOS uses capacitor://, Android uses
+        // https://localhost) — kept in sync with SecurityConfig.corsConfigurationSource().
+        List<String> nativeAppOrigins = List.of("capacitor://localhost", "https://localhost");
+        for (String nativeOrigin : nativeAppOrigins) {
+            if (!patterns.contains(nativeOrigin)) {
+                patterns.add(nativeOrigin);
+            }
+        }
+
         registry.addMapping("/**")
                 .allowedOriginPatterns(patterns.toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")

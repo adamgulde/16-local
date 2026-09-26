@@ -1,4 +1,6 @@
+import { Capacitor } from '@capacitor/core';
 import apiClient from './apiClient';
+import { unregisterDevice } from './deviceService';
 import type { User } from './userService';
 
 export interface AuthResponse {
@@ -81,6 +83,20 @@ export const saveSession = (auth: AuthResponse): void => {
 };
 
 export const clearSession = (): void => {
+  if (Capacitor.isNativePlatform()) {
+    const pushToken = localStorage.getItem('pushToken');
+    // Capture the auth token synchronously — apiClient's request interceptor
+    // reads localStorage asynchronously, so by the time the unregister
+    // request is dispatched the token below would already be gone.
+    const authToken = localStorage.getItem(TOKEN_KEY);
+    if (pushToken && authToken) {
+      // Fire-and-forget: don't block logout on push unregistration.
+      unregisterDevice(pushToken, authToken).catch(() => {});
+    }
+    if (pushToken) {
+      localStorage.removeItem('pushToken');
+    }
+  }
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 };
