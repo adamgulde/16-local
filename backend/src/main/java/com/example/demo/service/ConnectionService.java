@@ -42,6 +42,11 @@ public class ConnectionService {
                 .build());
     }
 
+    /** How many connections touching userId were created at/after {@code since} (S4 invite cap). */
+    public long countConnectionsCreatedSince(UUID userId, Instant since) {
+        return connectionRepository.countByUserIdAndCreatedAtSince(userId, since);
+    }
+
     public boolean areConnected(UUID userId1, UUID userId2) {
         UUID first = userId1.compareTo(userId2) < 0 ? userId1 : userId2;
         UUID second = userId1.compareTo(userId2) < 0 ? userId2 : userId1;
@@ -207,10 +212,12 @@ public class ConnectionService {
             boolean isConnectedToViewer = viewerId != null && (friendId.equals(viewerId) || viewerNeighbors.contains(friendId));
             boolean includePhoneNumber = isConnectedToViewer;
 
+            boolean isOwner = viewerId != null && friendId.equals(viewerId);
             responses.add(FriendSummaryResponse.from(
                     user,
                     friendRelationships,
                     includePhoneNumber,
+                    isOwner,
                     connectionsCount,
                     mutualFriendsCount,
                     isConnectedToViewer

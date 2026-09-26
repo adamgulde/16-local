@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration.class)
@@ -219,5 +220,90 @@ public class AuthControllerIT {
 
         // Stored OTP is deleted upon successful registration
         assertThat(otpRepository.findByPhoneNumber(cleanPhone(phone))).isEmpty();
+    }
+
+    // --- S2: no phone enumeration -----------------------------------------------------------
+
+    @Test
+    void signInInitiateOtp_returnsIdenticalResponseForExistingAndNonExistingNumber() {
+        String existingPhone = nextPhone("555700");
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(existingPhone, null), Void.class);
+        restTemplate.postForEntity(baseUrl("/api/auth/register"),
+                new RegisterRequest(existingPhone, getOtp(existingPhone), "Exists", "Already", null), AuthResponse.class);
+
+        String nonExistingPhone = nextPhone("555701");
+
+        ResponseEntity<String> existingResponse = restTemplate.postForEntity(
+                baseUrl("/api/auth/signin/initiate-otp"), new InitiateOtpRequest(existingPhone, null), String.class);
+        ResponseEntity<String> nonExistingResponse = restTemplate.postForEntity(
+                baseUrl("/api/auth/signin/initiate-otp"), new InitiateOtpRequest(nonExistingPhone, null), String.class);
+
+        assertThat(existingResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(nonExistingResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(existingResponse.getBody()).isEqualTo(nonExistingResponse.getBody());
+    }
+
+    @Test
+    void signUpInitiateOtp_returnsIdenticalResponseWhetherPhoneIsTakenOrNot() {
+        String takenPhone = nextPhone("555702");
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(takenPhone, null), Void.class);
+        restTemplate.postForEntity(baseUrl("/api/auth/register"),
+                new RegisterRequest(takenPhone, getOtp(takenPhone), "Taken", "Number", null), AuthResponse.class);
+
+        String freePhone = nextPhone("555703");
+
+        ResponseEntity<String> takenResponse = restTemplate.postForEntity(
+                baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(takenPhone, null), String.class);
+        ResponseEntity<String> freeResponse = restTemplate.postForEntity(
+                baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(freePhone, null), String.class);
+
+        assertThat(takenResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(freeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(takenResponse.getBody()).isEqualTo(freeResponse.getBody());
+    }
+
+    @Test
+    void signUpInitiateOtp_withInvalidInviteCode_returnsGenericOkAndSendsNoOtp() {
+        String phone = nextPhone("555704");
+
+        ResponseEntity<Void> response = restTemplate.postForEntity(
+                baseUrl("/api/auth/signup/initiate-otp"), new InitiateOtpRequest(phone, "NOTAREALCODE"), Void.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(otpRepository.findByPhoneNumber(cleanPhone(phone))).isEmpty();
+        verifyNoInteractions(twilioVerifyService);
+    }
+
+    // --- S4: invite code registration cap -----------------------------------------------------
+
+    @Test
+    void register_withInviteCode_isRejectedOnceDailyCapIsReached() {
+        String inviterPhone = nextPhone("555800");
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(inviterPhone, null), Void.class);
+        ResponseEntity<AuthResponse> inviterResponse = restTemplate.postForEntity(baseUrl("/api/auth/register"),
+                new RegisterRequest(inviterPhone, getOtp(inviterPhone), "Cap", "Inviter", null), AuthResponse.class);
+        String inviteCode = inviterResponse.getBody().user().inviteCode();
+
+        // Default cap is 10/day (app.invite.max-registrations-per-day) — use it up.
+        for (int i = 0; i < 10; i++) {
+            String phone = nextPhone("555801");
+            restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                    new InitiateOtpRequest(phone, inviteCode), Void.class);
+            ResponseEntity<AuthResponse> response = restTemplate.postForEntity(baseUrl("/api/auth/register"),
+                    new RegisterRequest(phone, getOtp(phone), "Invitee", "Number" + i, inviteCode), AuthResponse.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+
+        String oneTooManyPhone = nextPhone("555802");
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(oneTooManyPhone, inviteCode), Void.class);
+        ResponseEntity<Map> rejected = restTemplate.postForEntity(baseUrl("/api/auth/register"),
+                new RegisterRequest(oneTooManyPhone, getOtp(oneTooManyPhone), "Invitee", "TooMany", inviteCode), Map.class);
+
+        assertThat(rejected.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(rejected.getBody()).containsEntry("error", "This invite link has reached its limit for today");
     }
 }

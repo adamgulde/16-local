@@ -9,6 +9,7 @@ import java.util.UUID;
 /**
  * Summary DTO for friends list queries, including calculated metrics like
  * connections count and mutual friends with the viewing user.
+ * inviteCode (S4) is only ever populated when the subject is the viewer themself.
  */
 public record FriendSummaryResponse(
         UUID id,
@@ -28,6 +29,7 @@ public record FriendSummaryResponse(
             User user,
             List<UUID> relationships,
             boolean includePhoneNumber,
+            boolean isOwner,
             int connectionsCount,
             int mutualFriendsCount,
             boolean isConnectedToViewer
@@ -39,7 +41,7 @@ public record FriendSummaryResponse(
                 includePhoneNumber ? user.getPhoneNumber() : null,
                 user.getBio() == null ? "" : user.getBio(),
                 relationships,
-                user.getInviteCode(),
+                isOwner ? user.getInviteCode() : null,
                 user.isDefaultUser(),
                 user.getCreatedAt(),
                 connectionsCount,

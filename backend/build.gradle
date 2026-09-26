@@ -7,6 +7,10 @@ plugins {
 group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 
+// Spring Boot 3.4.1's managed Testcontainers version speaks a Docker API too old for this
+// host's Docker Engine (API 1.52, min 1.44). Override to a release that supports it.
+ext['testcontainers.version'] = '1.21.3'
+
 java {
     sourceCompatibility = '21'
 }
@@ -26,6 +30,10 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // In-memory rate limiting (S1): single-container deployment, no Redis.
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.14.0'
+    // Bounded eviction for the per-key bucket cache so memory can't grow unbounded.
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.0'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -74,6 +82,13 @@ tasks.named('test') {
     if (!envMap.isEmpty()) {
         environment envMap
     }
+    // This host's Docker Engine enforces a minimum API version (1.44) and rejects older
+    // requests outright. Testcontainers' docker-java client falls back to a hardcoded
+    // RemoteApiVersion.VERSION_1_32 whenever no api.version is configured, which this
+    // daemon refuses. Pin it via the docker-java "api.version" system property (the
+    // highest version docker-java 3.4.x's RemoteApiVersion enum knows, which happens to
+    // be exactly the daemon's floor) instead of a machine-local ~/.docker-java.properties file.
+    systemProperty 'api.version', '1.44'
 }
 
 tasks.named('bootRun') {

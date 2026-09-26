@@ -1,9 +1,9 @@
 package com.example.demo.controller;
 
-import com.example.demo.security.EncryptedPhoneNumberConverter;
 import com.example.demo.dto.*;
 import com.example.demo.exception.BadRequestException;
 import com.example.demo.model.User;
+import com.example.demo.ratelimit.RateLimitKeys;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.AuthTokenService;
 import com.example.demo.service.ConnectionService;
@@ -12,10 +12,12 @@ import com.example.demo.service.PlacementService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -34,17 +36,24 @@ public class AuthController {
     private final PlacementService placementService;
     private final OtpService otpService;
 
+    @Value("${app.invite.max-registrations-per-day:10}")
+    private int maxInviteRegistrationsPerDay;
+
     @PostMapping("/signin/initiate-otp")
     public ResponseEntity<Void> initiateSignInOtp(@RequestBody InitiateOtpRequest request) {
+        long startNanos = System.nanoTime();
         String phone = cleanPhone(request.phoneNumber());
         if (isBlank(phone)) {
             throw new BadRequestException("Phone number is required");
         }
-        if (!userRepository.existsByPhoneNumber(phone)) {
-            throw new BadRequestException("No account found with this phone number. Please sign up.");
+
+        // S2: never reveal whether an account exists via a different response — always 200
+        // with an identical empty body, and only actually send an SMS when eligible.
+        if (userRepository.existsByPhoneNumber(phone)) {
+            otpService.sendOtp(phone);
+            log.info("Sent sign-in OTP to phone_hash={}", RateLimitKeys.hash(phone));
         }
-        otpService.sendOtp(phone);
-        log.info("Sent sign-in OTP to {}", EncryptedPhoneNumberConverter.encrypt(phone));
+        enforceMinimumResponseTime(startNanos);
         return ResponseEntity.ok().build();
     }
 
@@ -70,23 +79,25 @@ public class AuthController {
 
     @PostMapping("/signup/initiate-otp")
     public ResponseEntity<Void> initiateSignUpOtp(@RequestBody InitiateOtpRequest request) {
+        long startNanos = System.nanoTime();
         String phone = cleanPhone(request.phoneNumber());
         if (isBlank(phone)) {
             throw new BadRequestException("Phone number is required");
         }
-        if (userRepository.existsByPhoneNumber(phone)) {
-            throw new BadRequestException("An account with this phone number already exists. Please sign in.");
-        }
 
-        if (!isBlank(request.inviteCode())) {
+        // S2: always 200 with an identical empty body, whether the phone is already taken or
+        // the invite code is invalid — only send an SMS when the number is actually eligible.
+        boolean eligible = !userRepository.existsByPhoneNumber(phone);
+        if (eligible && !isBlank(request.inviteCode())) {
             String code = request.inviteCode().trim().toUpperCase();
-            if (!userRepository.existsByInviteCode(code)) {
-                throw new BadRequestException("Invalid invite code");
-            }
+            eligible = userRepository.existsByInviteCode(code);
         }
 
-        otpService.sendOtp(phone);
-        log.info("Sent sign-up OTP to {}", EncryptedPhoneNumberConverter.encrypt(phone));
+        if (eligible) {
+            otpService.sendOtp(phone);
+            log.info("Sent sign-up OTP to phone_hash={}", RateLimitKeys.hash(phone));
+        }
+        enforceMinimumResponseTime(startNanos);
         return ResponseEntity.ok().build();
     }
 
@@ -103,7 +114,7 @@ public class AuthController {
         if (!otpService.verifySignUpOtp(phone, code)) {
             throw new BadRequestException("Invalid or expired verification code");
         }
-        log.info("Sign-up OTP verified for phone {}", EncryptedPhoneNumberConverter.encrypt(phone));
+        log.info("Sign-up OTP verified for phone_hash={}", RateLimitKeys.hash(phone));
         return ResponseEntity.ok().build();
     }
 
@@ -131,6 +142,15 @@ public class AuthController {
             String inviteCode = request.inviteCode().trim().toUpperCase();
             inviter = userRepository.findByInviteCode(inviteCode)
                     .orElseThrow(() -> new BadRequestException("Invalid invite code"));
+
+            // S4: cap registrations per invite code per day (DB count over a rolling 24h
+            // window of connections created via this inviter — each invite-code registration
+            // immediately creates exactly one such connection, below).
+            long recentInviteRegistrations = connectionService.countConnectionsCreatedSince(
+                    inviter.getId(), Instant.now().minus(Duration.ofDays(1)));
+            if (recentInviteRegistrations >= maxInviteRegistrationsPerDay) {
+                throw new BadRequestException("This invite link has reached its limit for today");
+            }
         }
 
         String uniqueInviteCode = generateUniqueInviteCode();
@@ -155,7 +175,8 @@ public class AuthController {
         // Clean up verified OTP record after successful registration
         otpService.clearOtp(phone);
 
-        log.info("Registered new user {} with invite code {}", user.getId(), uniqueInviteCode);
+        // Never log the invite code itself in the clear — hash it (same as rate-limit keys).
+        log.info("Registered new user {} with invite code hash {}", user.getId(), RateLimitKeys.hash(uniqueInviteCode));
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
@@ -171,16 +192,10 @@ public class AuthController {
                 .orElseGet(() -> ResponseEntity.ok(new InviteCodeValidationResponse(false, null)));
     }
 
-    @PostMapping("/initiate-otp")
-    public ResponseEntity<Void> initiateOtp(@RequestBody(required = false) InitiateOtpRequest request,
-                                             @RequestParam(required = false) String phoneNumber) {
-        String phone = cleanPhone(request != null && request.phoneNumber() != null ? request.phoneNumber() : phoneNumber);
-        if (isBlank(phone)) {
-            throw new BadRequestException("Phone number is required");
-        }
-        otpService.sendOtp(phone);
-        return ResponseEntity.ok().build();
-    }
+    // S3: the bare POST /api/auth/initiate-otp endpoint (send an SMS to any number, no checks)
+    // was removed — it wasn't called by the client and had none of S2's eligibility/enumeration
+    // protections. POST /api/auth/verify-otp below is kept: the sign-in flow's verifySignInOtp
+    // client call posts to it.
 
     @PostMapping("/verify-otp")
     public ResponseEntity<AuthResponse> verifyOtp(@RequestBody(required = false) VerifyOtpRequest request,
@@ -201,6 +216,26 @@ public class AuthController {
         String token = authTokenService.issueToken(user);
         List<UUID> relationships = connectionService.getNeighborIds(user.getId());
         return ResponseEntity.ok(new AuthResponse(token, UserResponse.from(user, relationships, true)));
+    }
+
+    // S2: pad the enumeration-sensitive initiate-otp responses to a constant floor (plus a
+    // little jitter) so response timing can't be used to distinguish "existing/eligible number,
+    // OTP dispatched" from "ineligible number, nothing sent" — a plain sleep is fine at this
+    // request volume; a real async delay queue would be overkill here.
+    private static final long MIN_INITIATE_OTP_RESPONSE_MILLIS = 400;
+    private static final long MIN_INITIATE_OTP_JITTER_MILLIS = 100;
+
+    private void enforceMinimumResponseTime(long startNanos) {
+        long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
+        long targetMillis = MIN_INITIATE_OTP_RESPONSE_MILLIS + secureRandom.nextInt((int) MIN_INITIATE_OTP_JITTER_MILLIS);
+        long remainingMillis = targetMillis - elapsedMillis;
+        if (remainingMillis > 0) {
+            try {
+                Thread.sleep(remainingMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private String generateUniqueInviteCode() {

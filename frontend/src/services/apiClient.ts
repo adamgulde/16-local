@@ -92,4 +92,25 @@ export const getSafeErrorMessage = (err: unknown, fallback = 'An unexpected erro
   return fallback;
 };
 
+// 429s from the rate limiter (PLAN.md §2 S1) carry a Retry-After header in seconds — surfaced
+// verbatim so the user knows roughly how long to wait, instead of the generic 4xx fallback.
+export const getRetryAfterSeconds = (err: unknown): number | null => {
+  if (!axios.isAxiosError(err) || err.response?.status !== 429) return null;
+  const header = err.response.headers?.['retry-after'];
+  const seconds = header !== undefined ? parseInt(String(header), 10) : NaN;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+};
+
+// Auth-flow error message that special-cases 429 (rate limited) before falling back to the usual
+// safe-message extraction — used by Login/Register instead of getSafeErrorMessage directly.
+export const getAuthErrorMessage = (err: unknown, fallback?: string): string => {
+  if (axios.isAxiosError(err) && err.response?.status === 429) {
+    const seconds = getRetryAfterSeconds(err);
+    return seconds
+      ? `Too many attempts. Please wait ${seconds}s and try again.`
+      : 'Too many attempts. Please wait and try again.';
+  }
+  return getSafeErrorMessage(err, fallback);
+};
+
 export default apiClient;

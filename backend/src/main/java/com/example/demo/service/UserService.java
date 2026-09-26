@@ -66,7 +66,7 @@ public class UserService {
                     List<UUID> relationships = adjacency.getOrDefault(user.getId(), List.of());
                     List<TagAssignmentResponse> tags = tagsBySubject.getOrDefault(user.getId(), List.of());
                     String note = notesBySubject.getOrDefault(user.getId(), "");
-                    return UserResponse.from(user, relationships, isSelf || isConnection, tags, note);
+                    return UserResponse.from(user, relationships, isSelf || isConnection, isSelf, tags, note);
                 })
                 .toList();
     }
@@ -83,7 +83,7 @@ public class UserService {
         List<TagAssignmentResponse> tags = tagService.getTagsForSubject(user.getId(), requestingUserId);
         String note = userNoteRepository.findByAuthorIdAndSubjectId(requestingUserId, user.getId())
                 .map(UserNote::getContent).orElse("");
-        return UserResponse.from(user, relationships, isSelf || isConnection, tags, note);
+        return UserResponse.from(user, relationships, isSelf || isConnection, isSelf, tags, note);
     }
 
     /** Search one field at a time (see {@link SearchMode}); tag criteria are only read in TAGS mode. */

@@ -1,6 +1,8 @@
 package com.example.demo.service;
 
 import com.example.demo.model.Otp;
+import com.example.demo.ratelimit.RateLimitProperties;
+import com.example.demo.ratelimit.RateLimitService;
 import com.example.demo.repository.OtpRepository;
 import com.example.demo.service.verify.TwilioVerifyService;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +32,10 @@ class OtpServiceTest {
 
     @BeforeEach
     void setUp() {
-        otpService = new OtpService(otpRepository, twilioVerifyService);
+        // Real (in-memory) rate limiter with default limits — plenty of headroom for these
+        // tests, which each send/verify only a handful of times.
+        otpService = new OtpService(otpRepository, twilioVerifyService,
+                new RateLimitService(new RateLimitProperties()), new RateLimitProperties());
     }
 
     @Test
@@ -63,6 +68,32 @@ class OtpServiceTest {
         ArgumentCaptor<Otp> captor = ArgumentCaptor.forClass(Otp.class);
         verify(otpRepository).save(captor.capture());
         assertThat(captor.getValue().getCode()).isEqualTo("000000");
+    }
+
+    @Test
+    void sendOtp_afterPhoneBudgetExhausted_isASilentNoOp() {
+        // S1: per-phone OTP send limit (default 3/hour, 10/day) — once exhausted, sendOtp must
+        // not dispatch or persist anything, but also must not throw (S2 callers treat this as a
+        // silent no-op so the phone's eligibility is never revealed via a different response).
+        RateLimitProperties tightLimit = new RateLimitProperties();
+        tightLimit.getPhone().setOtpSendPerHour(1);
+        tightLimit.getPhone().setOtpSendPerDay(1);
+        otpService = new OtpService(otpRepository, twilioVerifyService,
+                new RateLimitService(tightLimit), tightLimit);
+
+        String phone = "+12025550199";
+        when(otpRepository.findByPhoneNumber(phone)).thenReturn(Optional.empty());
+        when(twilioVerifyService.sendVerification(phone)).thenReturn(true);
+        lenient().when(twilioVerifyService.getLatestMockCode(phone)).thenReturn("654321");
+
+        otpService.sendOtp(phone); // consumes the only token
+        verify(twilioVerifyService).sendVerification(phone);
+        verify(twilioVerifyService).getLatestMockCode(phone);
+        verify(otpRepository).save(any());
+
+        otpService.sendOtp(phone); // budget exhausted — no further dispatch or save
+        verifyNoMoreInteractions(twilioVerifyService);
+        verify(otpRepository, times(1)).save(any());
     }
 
     @Test

@@ -1,6 +1,9 @@
 package com.example.demo;
 
 import com.example.demo.dto.AuthResponse;
+import com.example.demo.dto.FriendSummaryResponse;
+import com.example.demo.dto.InitiateOtpRequest;
+import com.example.demo.dto.RegisterRequest;
 import com.example.demo.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -128,5 +131,46 @@ public class UserControllerIT {
         headers.setBearerAuth(token);
         headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
         return headers;
+    }
+
+    private AuthResponse registerWithInviteCode(String inviteCode, String firstName, String lastName) {
+        String phone = "555889" + phoneSeq.incrementAndGet();
+        restTemplate.postForEntity(baseUrl("/api/auth/signup/initiate-otp"),
+                new InitiateOtpRequest(phone, inviteCode), Void.class);
+        String code = otpRepository.findByPhoneNumber(cleanPhone(phone)).orElseThrow().getCode();
+        RegisterRequest body = new RegisterRequest(phone, code, firstName, lastName, inviteCode);
+        return restTemplate.postForEntity(baseUrl("/api/auth/register"), body, AuthResponse.class).getBody();
+    }
+
+    // --- S4: invite code only ever populated for its owner -----------------------------------
+
+    @Test
+    void inviteCodeIsNullForNonOwnerInUsersList() {
+        AuthResponse viewer = register("owner1", "Own", "Er");
+        AuthResponse other = register("other1", "Oth", "Er");
+
+        ResponseEntity<UserResponse[]> response = restTemplate.exchange(
+                baseUrl("/api/users"), HttpMethod.GET, authHeader(viewer.token()), UserResponse[].class);
+
+        List<UserResponse> users = List.of(response.getBody());
+        UserResponse self = users.stream().filter(u -> u.id().equals(viewer.user().id())).findFirst().orElseThrow();
+        UserResponse otherUser = users.stream().filter(u -> u.id().equals(other.user().id())).findFirst().orElseThrow();
+
+        assertThat(self.inviteCode()).isNotBlank();
+        assertThat(otherUser.inviteCode()).isNull();
+    }
+
+    @Test
+    void inviteCodeIsNullForNonOwnerInFriendsList() {
+        AuthResponse a = register("friendA1", "Friend", "A");
+        AuthResponse b = registerWithInviteCode(a.user().inviteCode(), "Friend", "B");
+
+        // A's friends list contains B — B isn't the viewer, so B's invite code must be hidden.
+        ResponseEntity<FriendSummaryResponse[]> asA = restTemplate.exchange(
+                baseUrl("/api/users/" + a.user().id() + "/friends"), HttpMethod.GET, authHeader(a.token()),
+                FriendSummaryResponse[].class);
+        FriendSummaryResponse bAsSeenByA = java.util.Arrays.stream(asA.getBody())
+                .filter(f -> f.id().equals(b.user().id())).findFirst().orElseThrow();
+        assertThat(bAsSeenByA.inviteCode()).isNull();
     }
 }

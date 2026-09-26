@@ -1,5 +1,10 @@
 package com.example.demo.controller;
 
+import com.example.demo.ratelimit.ClientIpResolver;
+import com.example.demo.ratelimit.IpRateLimitFilter;
+import com.example.demo.ratelimit.RateLimitConfig;
+import com.example.demo.ratelimit.RateLimitService;
+import com.example.demo.ratelimit.UserRateLimitFilter;
 import com.example.demo.security.SecurityConfig;
 import com.example.demo.security.TokenAuthenticationFilter;
 import com.example.demo.service.AuthTokenService;
@@ -27,9 +32,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * MockMvc slice test — no Testcontainers/database involved. Includes the real
  * SecurityConfig + TokenAuthenticationFilter so the 401 case is exercised for real.
+ * Also pulls in the rate-limit (S1) filters SecurityConfig now wires into the chain, plus their
+ * dependencies, since this slice test doesn't load the full application context.
  */
 @WebMvcTest(controllers = DeviceController.class)
-@Import({SecurityConfig.class, TokenAuthenticationFilter.class})
+@Import({SecurityConfig.class, TokenAuthenticationFilter.class, RateLimitConfig.class,
+        ClientIpResolver.class, RateLimitService.class, IpRateLimitFilter.class, UserRateLimitFilter.class})
 class DeviceControllerTest {
 
     @Autowired

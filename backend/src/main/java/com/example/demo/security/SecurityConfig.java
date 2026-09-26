@@ -1,5 +1,7 @@
 package com.example.demo.security;
 
+import com.example.demo.ratelimit.IpRateLimitFilter;
+import com.example.demo.ratelimit.UserRateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +27,8 @@ import java.util.List;
 public class SecurityConfig {
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
+    private final IpRateLimitFilter ipRateLimitFilter;
+    private final UserRateLimitFilter userRateLimitFilter;
 
     // Added localhost:3000, 127.0.0.1 variants, and wildcards for common dev server ports
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5173}")
@@ -54,9 +58,15 @@ public class SecurityConfig {
                         }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/**", "/api/otp/**", "/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        // S3: OtpController (/api/otp/*) was removed — unused by the client.
+                        .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/health/**", "/error").permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                // IP-based limits (S1) run first, ahead of authentication, since the endpoints
+                // they guard (OTP send/verify, register, invite validation) are public. The
+                // per-user limit runs after authentication resolves the principal.
+                .addFilterBefore(ipRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(userRateLimitFilter, TokenAuthenticationFilter.class);
 
         return http.build();
     }

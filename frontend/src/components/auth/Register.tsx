@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignUpOtp, register, saveSession, validateInviteCode, verifySignUpOtp } from '../../services/authService';
-import { getSafeErrorMessage } from '../../services/apiClient';
+import { getAuthErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
@@ -53,9 +53,9 @@ export const Register = ({ onLogin }: RegisterProps) => {
         setInviteCodeError('Invite code not found');
         return false;
       }
-    } catch {
+    } catch (err) {
       setInviterName(null);
-      setInviteCodeError('Could not validate invite code');
+      setInviteCodeError(getAuthErrorMessage(err, 'Could not validate invite code'));
       return false;
     } finally {
       setIsValidatingCode(false);
@@ -98,7 +98,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       setResendSuccess(false);
       startCooldown(30);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Failed to send verification code.'));
+      setError(getAuthErrorMessage(err, 'Failed to send verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -121,7 +121,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       await verifySignUpOtp(phoneNumber.trim(), trimmedCode);
       setStep('PROFILE');
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Invalid or expired verification code.'));
+      setError(getAuthErrorMessage(err, 'Invalid or expired verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -153,7 +153,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       saveSession(auth);
       onLogin(auth.user);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Registration failed.'));
+      setError(getAuthErrorMessage(err, 'Registration failed.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -172,7 +172,7 @@ export const Register = ({ onLogin }: RegisterProps) => {
       setResendSuccess(true);
       startCooldown(30);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Failed to resend code.'));
+      setError(getAuthErrorMessage(err, 'Failed to resend code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -271,7 +271,14 @@ export const Register = ({ onLogin }: RegisterProps) => {
         {step === 'OTP' && (
           <form onSubmit={(e) => { e.preventDefault(); handleVerifyOtpStep(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <p style={{ margin: 0, fontSize: '13px', color: '#9a9a9a', textAlign: 'center' }}>
-              Enter the 6-digit code sent to {phoneNumber}
+              If this number can be used here, we've sent a code.
+            </p>
+            <p style={{ margin: '-8px 0 0', fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>
+              No code? You may need to{' '}
+              <Link to="/login" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+                sign in
+              </Link>{' '}
+              instead.
             </p>
 
             <div>

@@ -1,6 +1,6 @@
 package com.example.demo.service.sms;
 
-import com.example.demo.security.EncryptedPhoneNumberConverter;
+import com.example.demo.ratelimit.RateLimitKeys;
 import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.api.v2010.account.Message;
@@ -100,16 +100,16 @@ public class TwilioSmsService implements SmsService {
                             message
                     ).create();
                 }
-                log.info("Twilio SMS successfully sent to {}", EncryptedPhoneNumberConverter.encrypt(to));
+                log.info("Twilio SMS successfully sent to phone_hash={}", RateLimitKeys.hash(to));
                 return;
             } catch (ApiException e) {
-                log.warn("Twilio API error sending SMS to {}: {} (code: {}). Falling back to console log.",
-                        EncryptedPhoneNumberConverter.encrypt(phoneNumber), e.getMessage(), e.getCode());
+                log.warn("Twilio API error sending SMS to phone_hash={}: {} (code: {}). Falling back to console log.",
+                        RateLimitKeys.hash(phoneNumber), e.getMessage(), e.getCode());
             } catch (Exception e) {
-                log.warn("Unexpected error sending Twilio SMS to {}: {}. Falling back to console log.",
-                        EncryptedPhoneNumberConverter.encrypt(phoneNumber), e.getMessage());
+                log.warn("Unexpected error sending Twilio SMS to phone_hash={}: {}. Falling back to console log.",
+                        RateLimitKeys.hash(phoneNumber), e.getMessage());
             }
         }
-        log.info("[MOCK SMS] To: {} | {}", EncryptedPhoneNumberConverter.encrypt(phoneNumber), message);
+        log.info("[MOCK SMS] To phone_hash={} | {}", RateLimitKeys.hash(phoneNumber), message);
     }
 }

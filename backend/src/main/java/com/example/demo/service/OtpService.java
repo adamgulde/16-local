@@ -1,13 +1,18 @@
 package com.example.demo.service;
 
 import com.example.demo.model.Otp;
+import com.example.demo.ratelimit.RateLimitKeys;
+import com.example.demo.ratelimit.RateLimitProperties;
+import com.example.demo.ratelimit.RateLimitService;
 import com.example.demo.repository.OtpRepository;
 import com.example.demo.service.verify.TwilioVerifyService;
+import io.github.bucket4j.ConsumptionProbe;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -17,15 +22,32 @@ public class OtpService {
 
     private final OtpRepository otpRepository;
     private final TwilioVerifyService twilioVerifyService;
+    private final RateLimitService rateLimitService;
+    private final RateLimitProperties rateLimitProperties;
     private final SecureRandom random = new SecureRandom();
 
     @Autowired
-    public OtpService(OtpRepository otpRepository, TwilioVerifyService twilioVerifyService) {
+    public OtpService(OtpRepository otpRepository, TwilioVerifyService twilioVerifyService,
+                       RateLimitService rateLimitService, RateLimitProperties rateLimitProperties) {
         this.otpRepository = otpRepository;
         this.twilioVerifyService = twilioVerifyService;
+        this.rateLimitService = rateLimitService;
+        this.rateLimitProperties = rateLimitProperties;
     }
 
+    /**
+     * Sends (or mocks) an OTP for {@code phoneNumber}, unless that phone number has hit its
+     * send limit (S1: 3/hour, 10/day, keyed by a hash of the normalized phone number — never
+     * the raw number). Callers in the enumeration-sensitive signin/signup flows (S2) must treat
+     * a rate-limited send as a silent no-op, not a distinguishable error, so the phone's
+     * existence/eligibility is never revealed via a different response.
+     */
     public void sendOtp(String phoneNumber) {
+        if (!tryConsumePhoneOtpSendBudget(phoneNumber)) {
+            log.warn("OTP send rate limit exceeded for phone_hash={}", RateLimitKeys.hash(phoneNumber));
+            return;
+        }
+
         boolean isTest = TwilioVerifyService.isTestPhoneNumber(phoneNumber);
         String code = isTest ? "000000" : null;
 
@@ -109,5 +131,13 @@ public class OtpService {
      */
     public void clearOtp(String phoneNumber) {
         otpRepository.findByPhoneNumber(phoneNumber).ifPresent(otpRepository::delete);
+    }
+
+    private boolean tryConsumePhoneOtpSendBudget(String phoneNumber) {
+        String key = "phone-otp:" + RateLimitKeys.hash(phoneNumber);
+        ConsumptionProbe probe = rateLimitService.tryConsume(key, () -> RateLimitService.bucketOf(
+                RateLimitService.bandwidth(rateLimitProperties.getPhone().getOtpSendPerHour(), Duration.ofHours(1)),
+                RateLimitService.bandwidth(rateLimitProperties.getPhone().getOtpSendPerDay(), Duration.ofDays(1))));
+        return probe.isConsumed();
     }
 }

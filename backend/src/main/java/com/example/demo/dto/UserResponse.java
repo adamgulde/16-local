@@ -14,6 +14,8 @@ import java.util.UUID;
  * caller's own private tags) and note is the caller's own private note on them
  * ("" if none). Both are null where they aren't loaded (auth responses, which
  * the client keeps as a long-lived session snapshot).
+ * inviteCode (S4) is only ever populated for the user's own account — every
+ * other subject sees null, never their invite code.
  */
 public record UserResponse(
         UUID id,
@@ -29,12 +31,13 @@ public record UserResponse(
         List<TagAssignmentResponse> tags,
         String note
 ) {
+    /** Used only where the subject is always the caller themself (auth responses). */
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber) {
-        return from(user, relationships, includePhoneNumber, null, null);
+        return from(user, relationships, includePhoneNumber, true, null, null);
     }
 
     public static UserResponse from(User user, List<UUID> relationships, boolean includePhoneNumber,
-                                    List<TagAssignmentResponse> tags, String note) {
+                                    boolean isOwner, List<TagAssignmentResponse> tags, String note) {
         return new UserResponse(
                 user.getId(),
                 user.getFirstName(),
@@ -42,7 +45,7 @@ public record UserResponse(
                 includePhoneNumber ? user.getPhoneNumber() : null,
                 user.getBio() == null ? "" : user.getBio(),
                 relationships,
-                user.getInviteCode(),
+                isOwner ? user.getInviteCode() : null,
                 user.getMaxConnectionDegree(),
                 user.isDefaultUser(),
                 user.getCreatedAt(),

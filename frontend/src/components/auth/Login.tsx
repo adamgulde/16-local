@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { User } from '../../services/userService';
 import { initiateSignInOtp, verifySignInOtp, saveSession } from '../../services/authService';
-import { getSafeErrorMessage } from '../../services/apiClient';
+import { getAuthErrorMessage } from '../../services/apiClient';
 import { formatPhoneNumber, isCompletePhoneNumber } from '../../utils/phoneUtils';
 import { useOtpCooldown } from '../../hooks/useOtpCooldown';
 
@@ -44,7 +44,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       setResendSuccess(false);
       startCooldown(30);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Failed to send verification code.'));
+      setError(getAuthErrorMessage(err, 'Failed to send verification code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -70,7 +70,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       localStorage.setItem('remembered_phone', resolvedPhone);
       onLogin(auth.user);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Invalid or expired code.'));
+      setError(getAuthErrorMessage(err, 'Invalid or expired code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -90,7 +90,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       setResendSuccess(true);
       startCooldown(30);
     } catch (err) {
-      setError(getSafeErrorMessage(err, 'Failed to resend code.'));
+      setError(getAuthErrorMessage(err, 'Failed to resend code.'));
     } finally {
       setTimeout(() => {
         submittingRef.current = false;
@@ -114,8 +114,19 @@ export const Login = ({ onLogin }: LoginProps) => {
       }}>
         <h2 style={{ margin: 0, textAlign: 'center', color: '#f0f0f0' }}>Sign In</h2>
         <p style={{ margin: 0, fontSize: '13px', color: '#9a9a9a', textAlign: 'center' }}>
-          {step === 'PHONE' ? 'Enter your phone number to receive a one-time code.' : `Enter the 6-digit code sent to ${phoneNumber}`}
+          {step === 'PHONE'
+            ? 'Enter your phone number to receive a one-time code.'
+            : "If this number can be used here, we've sent a code."}
         </p>
+        {step === 'OTP' && (
+          <p style={{ margin: '-8px 0 0', fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>
+            No code? You may need to{' '}
+            <Link to="/register" style={{ color: '#6ab0ff', textDecoration: 'none' }}>
+              sign up
+            </Link>{' '}
+            instead.
+          </p>
+        )}
 
         {step === 'PHONE' ? (
           <form onSubmit={(e) => { e.preventDefault(); handleInitiate(); }} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

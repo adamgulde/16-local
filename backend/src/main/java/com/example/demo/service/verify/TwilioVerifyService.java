@@ -1,6 +1,6 @@
 package com.example.demo.service.verify;
 
-import com.example.demo.security.EncryptedPhoneNumberConverter;
+import com.example.demo.ratelimit.RateLimitKeys;
 import com.twilio.Twilio;
 import com.twilio.exception.ApiException;
 import com.twilio.rest.verify.v2.service.Verification;
@@ -125,22 +125,22 @@ public class TwilioVerifyService {
             DevVerifyEntry entry = new DevVerifyEntry("000000", Instant.now().plusSeconds(900));
             devVerifyStore.put(e164, entry);
             devVerifyStore.put(phoneNumber.trim(), entry);
-            log.info("[TWILIO VERIFY TEST ACCOUNT] Default mock code 000000 registered for {}", EncryptedPhoneNumberConverter.encrypt(e164));
+            log.info("[TWILIO VERIFY TEST ACCOUNT] Default mock code 000000 registered for phone_hash={}", RateLimitKeys.hash(e164));
             return true;
         }
 
         if (configured) {
             try {
                 Verification verification = Verification.creator(verifyServiceSid, e164, "sms").create();
-                log.info("Twilio Verify SMS initiated for {} (sid: {}, status: {})",
-                        EncryptedPhoneNumberConverter.encrypt(e164), verification.getSid(), verification.getStatus());
+                log.info("Twilio Verify SMS initiated for phone_hash={} (sid: {}, status: {})",
+                        RateLimitKeys.hash(e164), verification.getSid(), verification.getStatus());
                 return true;
             } catch (ApiException e) {
-                log.warn("Twilio Verify API error sending verification to {}: {} (code: {}). Falling back to mock OTP.",
-                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage(), e.getCode());
+                log.warn("Twilio Verify API error sending verification to phone_hash={}: {} (code: {}). Falling back to mock OTP.",
+                        RateLimitKeys.hash(e164), e.getMessage(), e.getCode());
             } catch (Exception e) {
-                log.warn("Unexpected error initiating Twilio Verify for {}: {}. Falling back to mock OTP.",
-                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage());
+                log.warn("Unexpected error initiating Twilio Verify for phone_hash={}: {}. Falling back to mock OTP.",
+                        RateLimitKeys.hash(e164), e.getMessage());
             }
         }
 
@@ -150,7 +150,7 @@ public class TwilioVerifyService {
         devVerifyStore.put(e164, entry);
         devVerifyStore.put(phoneNumber.trim(), entry);
         log.info("==================================================================");
-        log.info("[TWILIO VERIFY MOCK OTP] Code generated for phone [{}]: {}", EncryptedPhoneNumberConverter.encrypt(e164), mockCode);
+        log.info("[TWILIO VERIFY MOCK OTP] Code generated for phone_hash [{}]: {}", RateLimitKeys.hash(e164), mockCode);
         log.info("==================================================================");
         return true;
     }
@@ -178,16 +178,16 @@ public class TwilioVerifyService {
                         .setCode(cleanCode)
                         .create();
                 boolean approved = "approved".equalsIgnoreCase(check.getStatus());
-                log.info("Twilio Verify check for {}: status={}", EncryptedPhoneNumberConverter.encrypt(e164), check.getStatus());
+                log.info("Twilio Verify check for phone_hash={}: status={}", RateLimitKeys.hash(e164), check.getStatus());
                 if (approved) {
                     return true;
                 }
             } catch (ApiException e) {
-                log.warn("Twilio Verify API check error for {}: {} (code: {}). Checking fallback store.",
-                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage(), e.getCode());
+                log.warn("Twilio Verify API check error for phone_hash={}: {} (code: {}). Checking fallback store.",
+                        RateLimitKeys.hash(e164), e.getMessage(), e.getCode());
             } catch (Exception e) {
-                log.warn("Unexpected error during Twilio Verify check for {}: {}. Checking fallback store.",
-                        EncryptedPhoneNumberConverter.encrypt(e164), e.getMessage());
+                log.warn("Unexpected error during Twilio Verify check for phone_hash={}: {}. Checking fallback store.",
+                        RateLimitKeys.hash(e164), e.getMessage());
             }
         }
 
