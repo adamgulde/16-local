@@ -5,6 +5,7 @@ import { fetchGraph, fetchShareGraph, type Graph, type GraphNode } from '../serv
 import {
   createContact,
   deleteContact,
+  importContacts,
   linkContacts,
   unlinkContacts,
   updateContact,
@@ -360,6 +361,34 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     [withPending]
   );
 
+  // Bulk import (address book / vCard / CSV). Not routed through withPending: the import panel
+  // shows its own progress and errors. Whatever landed is merged in even if a later chunk fails,
+  // since earlier chunks are already saved server-side.
+  const handleImportContacts = useCallback(
+    async (payloads: CreateContactPayload[], onProgress?: (done: number) => void) => {
+      const created: GraphNode[] = [];
+      const addToGraph = (nodes: GraphNode[]) =>
+        setGraph((prev) => {
+          const self = prev.nodes.find((n) => n.kind === 'SELF');
+          return {
+            nodes: [...prev.nodes, ...nodes],
+            edges: self
+              ? [...prev.edges, ...nodes.map((n) => ({ source: self.id, target: n.id, kind: 'DIRECT' as const, shareId: null }))]
+              : prev.edges,
+          };
+        });
+      try {
+        const result = await importContacts(payloads, onProgress, (chunk) => created.push(...chunk));
+        addToGraph(result.created);
+        return result;
+      } catch (err) {
+        if (created.length > 0) addToGraph(created);
+        throw err;
+      }
+    },
+    []
+  );
+
   const handleUpdateContact = useCallback(
     (id: string, payload: UpdateContactPayload) =>
       withPending(
@@ -681,6 +710,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     handleGlobalZoom,
     handleZoomStep,
     handleCreateContact,
+    handleImportContacts,
     handleUpdateContact,
     handleDeleteContact,
     handleLinkContacts,

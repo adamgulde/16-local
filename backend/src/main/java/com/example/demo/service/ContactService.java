@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.ContactImportRequest;
+import com.example.demo.dto.ContactImportResponse;
 import com.example.demo.dto.ContactRequest;
 import com.example.demo.dto.GraphNode;
 import com.example.demo.dto.NodeKind;
@@ -20,7 +22,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -34,6 +41,10 @@ public class ContactService {
 
     private static final int MAX_NAME_LENGTH = 100;
     private static final int MAX_TEXT_LENGTH = 10_000;
+    /** Entries accepted per import call — clients chunk larger address books. */
+    static final int MAX_IMPORT_BATCH = 500;
+    /** Hard cap on one user's graph size, so a bulk import can't grow a graph without bound. */
+    static final int MAX_CONTACTS_PER_OWNER = 5_000;
 
     private final ContactRepository contactRepository;
     private final ContactLinkRepository contactLinkRepository;
@@ -57,6 +68,83 @@ public class ContactService {
                 .build();
         contact = contactRepository.save(contact);
         return toNode(contact);
+    }
+
+    /**
+     * Bulk-creates PLACEHOLDER contacts from an address-book import. Never links anyone by phone
+     * (plan §1: a phone match is not consent to connect) — every imported person starts as a plain
+     * placeholder, exactly as if typed into "Add person". Entries matching an existing contact (same
+     * phone number, or — with no phone — the same full name) or an earlier entry in the batch are
+     * skipped, so re-running an import is harmless. Entries with no usable name are skipped too;
+     * over-long names are truncated rather than failing the whole batch.
+     */
+    @Transactional
+    public ContactImportResponse importContacts(UUID ownerId, ContactImportRequest request) {
+        List<ContactRequest> entries = request == null || request.contacts() == null ? List.of() : request.contacts();
+        if (entries.size() > MAX_IMPORT_BATCH) {
+            throw new BadRequestException("Import at most " + MAX_IMPORT_BATCH + " contacts at a time");
+        }
+
+        List<Contact> existing = contactRepository.findByOwnerId(ownerId);
+        Set<String> knownPhones = new HashSet<>();
+        Set<String> knownNames = new HashSet<>();
+        for (Contact c : existing) {
+            String phone = c.getLinkedUser() != null ? c.getLinkedUser().getPhoneNumber() : c.getPhoneNumber();
+            String phoneKey = phoneKey(phone);
+            if (phoneKey != null) {
+                knownPhones.add(phoneKey);
+            }
+            knownNames.add(nameKey(c.getFirstName(), c.getLastName()));
+        }
+
+        List<Contact> toCreate = new ArrayList<>();
+        int skippedDuplicates = 0;
+        int skippedInvalid = 0;
+        for (ContactRequest entry : entries) {
+            if (entry == null) {
+                skippedInvalid++;
+                continue;
+            }
+            String firstName = truncate(entry.firstName(), MAX_NAME_LENGTH);
+            String lastName = truncate(entry.lastName(), MAX_NAME_LENGTH);
+            if (firstName == null) {
+                firstName = lastName;
+                lastName = null;
+            }
+            if (firstName == null) {
+                skippedInvalid++;
+                continue;
+            }
+            String phone = PhoneNumbers.clean(truncate(entry.phoneNumber(), MAX_NAME_LENGTH));
+            String phoneKey = phoneKey(phone);
+            String nameKey = nameKey(firstName, lastName);
+            boolean duplicate = phoneKey != null ? knownPhones.contains(phoneKey) : knownNames.contains(nameKey);
+            if (duplicate) {
+                skippedDuplicates++;
+                continue;
+            }
+            if (phoneKey != null) {
+                knownPhones.add(phoneKey);
+            }
+            knownNames.add(nameKey);
+            toCreate.add(Contact.builder()
+                    .owner(userRepository.getReferenceById(ownerId))
+                    .firstName(firstName)
+                    .lastName(lastName)
+                    .about(truncate(entry.about(), MAX_TEXT_LENGTH))
+                    .phoneNumber(phone)
+                    .build());
+        }
+
+        if (existing.size() + toCreate.size() > MAX_CONTACTS_PER_OWNER) {
+            throw new BadRequestException("Your graph can hold at most " + MAX_CONTACTS_PER_OWNER
+                    + " people — this import would add " + toCreate.size() + " to your " + existing.size());
+        }
+
+        List<GraphNode> created = contactRepository.saveAll(toCreate).stream()
+                .map(c -> toNode(c, List.of()))
+                .toList();
+        return new ContactImportResponse(created, skippedDuplicates, skippedInvalid);
     }
 
     @Transactional
@@ -197,6 +285,10 @@ public class ContactService {
         var tags = contactTagRepository.findByContactId(contact.getId()).stream()
                 .map(ct -> TagAssignmentResponse.from(ct, taxonomy))
                 .toList();
+        return toNode(contact, tags);
+    }
+
+    private GraphNode toNode(Contact contact, List<TagAssignmentResponse> tags) {
         boolean registered = contact.getLinkedUser() != null;
         String phoneNumber = registered ? contact.getLinkedUser().getPhoneNumber() : contact.getPhoneNumber();
         return new GraphNode(
@@ -213,6 +305,38 @@ public class ContactService {
                 null,
                 true
         );
+    }
+
+    /** Trimmed and cut to {@code max} characters; blank becomes null. */
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() > max ? trimmed.substring(0, max).trim() : trimmed;
+    }
+
+    /**
+     * Dedup key for a phone number: its last 10 digits, so "+1 555-123-4567", "(555) 123-4567"
+     * and "5551234567" all match. Null for anything too short to be a real number.
+     */
+    private static String phoneKey(String phone) {
+        if (phone == null) {
+            return null;
+        }
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.length() < 7) {
+            return null;
+        }
+        return digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
+    }
+
+    private static String nameKey(String firstName, String lastName) {
+        String full = (firstName == null ? "" : firstName.trim()) + " " + (lastName == null ? "" : lastName.trim());
+        return full.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private String validateName(String name, boolean required, String fieldLabel) {

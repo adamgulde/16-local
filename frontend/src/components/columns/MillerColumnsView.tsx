@@ -490,8 +490,10 @@ export const MillerColumnsView = ({ currentUser, onSwitchToGraph, isMobile = fal
 
       {/* Add person */}
       {isMobile ? (
-        <BottomSheet open={showAddPerson} onClose={() => setShowAddPerson(false)} title="Add Person">
+        <BottomSheet open={showAddPerson} onClose={() => setShowAddPerson(false)} title="Add Person" maxHeight="85dvh">
           <AddPersonForm
+            onImportContacts={c.handleImportContacts}
+            nodes={c.graph.nodes}
             compact
             onSubmit={(payload) => {
               c.handleCreateContact(payload);
@@ -505,6 +507,8 @@ export const MillerColumnsView = ({ currentUser, onSwitchToGraph, isMobile = fal
         showAddPerson && (
           <div style={{ position: 'absolute', top: 72, left: 20, width: 360, zIndex: 40 }}>
             <AddPersonForm
+              onImportContacts={c.handleImportContacts}
+              nodes={c.graph.nodes}
               onSubmit={(payload) => {
                 c.handleCreateContact(payload);
                 setShowAddPerson(false);

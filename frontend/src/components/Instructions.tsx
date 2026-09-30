@@ -1186,7 +1186,7 @@ export const Instructions = ({ onClose, isModal = false, currentUser = null }: I
               This graph is <strong style={{ color: '#6ab0ff' }}>private</strong> — just you and the people you add. Tap{' '}
               <strong style={{ color: '#9ca3af' }}>Dana</strong> (dashed = a placeholder you wrote yourself, no account) vs.{' '}
               <strong style={{ color: '#22c55e' }}>Riley</strong> or <strong style={{ color: '#22c55e' }}>Casey</strong> (solid =
-              registered, linked to a real account). "Add person" creates a new placeholder you can later link to a real account.
+              registered, linked to a real account). "Add person" creates a new placeholder you can later link to a real account; "Import contacts" there adds many at once from your phone’s contacts or a .vcf/.csv file — only the people you tick are uploaded, and nobody is notified.
             </p>
           )}
           {currentStep === 1 && (

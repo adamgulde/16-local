@@ -571,6 +571,8 @@ export const GraphContainer = ({
           onBringToFront={() => setFrontCard('add')}
         >
           <AddPersonForm
+            onImportContacts={c.handleImportContacts}
+            nodes={c.graph.nodes}
             onSubmit={(payload) => {
               c.handleCreateContact(payload);
               setShowAddPerson(false);

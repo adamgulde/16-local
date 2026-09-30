@@ -521,8 +521,10 @@ export const MobileGraphView = ({
       </BottomSheet>
 
       {/* Add person sheet */}
-      <BottomSheet open={activeSheet === 'addPerson'} onClose={() => setActiveSheet(null)} title="Add Person">
+      <BottomSheet open={activeSheet === 'addPerson'} onClose={() => setActiveSheet(null)} title="Add Person" maxHeight="85dvh">
         <AddPersonForm
+          onImportContacts={c.handleImportContacts}
+          nodes={c.graph.nodes}
           compact
           onSubmit={(payload) => {
             c.handleCreateContact(payload);

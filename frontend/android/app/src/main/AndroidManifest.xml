@@ -42,4 +42,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Import contacts: read-only; only the people the user picks are uploaded. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 </manifest>

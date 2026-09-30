@@ -30,6 +30,9 @@ public interface ContactRepository extends JpaRepository<Contact, UUID> {
 
     boolean existsByOwnerIdAndLinkedUserId(UUID ownerId, UUID linkedUserId);
 
+    /** Total size of an owner's graph — enforces the per-user contact cap on bulk import. */
+    long countByOwnerId(UUID ownerId);
+
     /** Every contact anyone has registered as this user — used when a user is removed/unlinked on their end. */
     List<Contact> findByLinkedUserId(UUID linkedUserId);
 

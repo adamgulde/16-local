@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.ContactImportRequest;
+import com.example.demo.dto.ContactImportResponse;
 import com.example.demo.dto.ContactRequest;
 import com.example.demo.dto.GraphNode;
 import com.example.demo.dto.NodeKind;
@@ -20,6 +22,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -230,5 +234,95 @@ class ContactServiceTest {
         contactService.ensureRegisteredContact(a, b, null);
 
         verify(contactRepository, never()).save(any());
+    }
+
+    // --- Bulk import ---
+
+    private void stubSaveAllAssigningIds() {
+        when(contactRepository.saveAll(any())).thenAnswer(inv -> {
+            List<Contact> saved = new ArrayList<>();
+            for (Contact c : (Iterable<Contact>) inv.getArgument(0)) {
+                c.setId(UUID.randomUUID());
+                saved.add(c);
+            }
+            return saved;
+        });
+    }
+
+    @Test
+    void importCreatesPlaceholdersAndSkipsDuplicatesOfExistingContactsAndOfEachOther() {
+        User linked = User.builder().id(UUID.randomUUID()).firstName("Reg").phoneNumber("+1 555-000-2222").build();
+        when(contactRepository.findByOwnerId(ownerId)).thenReturn(List.of(
+                Contact.builder().id(UUID.randomUUID()).owner(owner).firstName("Sam").lastName("Smith")
+                        .phoneNumber("+1 555-000-1111").build(),
+                Contact.builder().id(UUID.randomUUID()).owner(owner).linkedUser(linked).firstName("Reg").build(),
+                Contact.builder().id(UUID.randomUUID()).owner(owner).firstName("No").lastName("Phone").build()));
+        stubSaveAllAssigningIds();
+
+        ContactImportResponse response = contactService.importContacts(ownerId, new ContactImportRequest(List.of(
+                new ContactRequest("Samuel", null, null, "(555) 000-1111"),   // same phone as Sam -> dup
+                new ContactRequest("Other", null, null, "15550002222"),       // registered user's phone -> dup
+                new ContactRequest("no", "PHONE", null, null),                // same name, no phone -> dup
+                new ContactRequest("New", "Person", "Acme", "555 000 3333"),
+                new ContactRequest("New", "Twin", null, "+1 (555) 000-3333"), // dup within batch
+                new ContactRequest(" ", " ", null, "5550004444"),              // no name -> invalid
+                new ContactRequest(null, "Lastonly", null, null))));
+
+        assertThat(response.skippedDuplicates()).isEqualTo(4);
+        assertThat(response.skippedInvalid()).isEqualTo(1);
+        assertThat(response.created()).extracting(GraphNode::firstName).containsExactly("New", "Lastonly");
+        GraphNode first = response.created().get(0);
+        assertThat(first.kind()).isEqualTo(NodeKind.PLACEHOLDER);
+        assertThat(first.phoneNumber()).isEqualTo("+1 555-000-3333");
+        assertThat(first.about()).isEqualTo("Acme");
+        assertThat(first.linkedUserId()).isNull();
+        assertThat(response.created().get(1).lastName()).isEmpty();
+    }
+
+    @Test
+    void importTruncatesOverlongNamesInsteadOfFailingTheBatch() {
+        when(contactRepository.findByOwnerId(ownerId)).thenReturn(List.of());
+        stubSaveAllAssigningIds();
+
+        ContactImportResponse response = contactService.importContacts(ownerId,
+                new ContactImportRequest(List.of(new ContactRequest("x".repeat(150), null, null, null))));
+
+        assertThat(response.created()).hasSize(1);
+        assertThat(response.created().get(0).firstName()).hasSize(100);
+    }
+
+    @Test
+    void importRejectsOversizedBatches() {
+        List<ContactRequest> entries = Collections.nCopies(ContactService.MAX_IMPORT_BATCH + 1,
+                new ContactRequest("A", null, null, null));
+        assertThatThrownBy(() -> contactService.importContacts(ownerId, new ContactImportRequest(entries)))
+                .isInstanceOf(BadRequestException.class);
+        verify(contactRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void importRejectsGrowingAGraphPastTheCap() {
+        List<Contact> existing = new ArrayList<>();
+        for (int i = 0; i < ContactService.MAX_CONTACTS_PER_OWNER; i++) {
+            existing.add(Contact.builder().id(UUID.randomUUID()).owner(owner).firstName("C" + i).build());
+        }
+        when(contactRepository.findByOwnerId(ownerId)).thenReturn(existing);
+
+        assertThatThrownBy(() -> contactService.importContacts(ownerId,
+                new ContactImportRequest(List.of(new ContactRequest("Brand", "New", null, null)))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("at most");
+        verify(contactRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void importWithNoEntriesIsANoOp() {
+        when(contactRepository.findByOwnerId(ownerId)).thenReturn(List.of());
+        when(contactRepository.saveAll(any())).thenReturn(List.of());
+
+        ContactImportResponse response = contactService.importContacts(ownerId, new ContactImportRequest(null));
+
+        assertThat(response.created()).isEmpty();
+        assertThat(response.skippedDuplicates()).isZero();
     }
 }

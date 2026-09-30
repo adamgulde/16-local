@@ -1,7 +1,11 @@
 package com.example.demo;
 
 import com.example.demo.dto.AuthResponse;
+import com.example.demo.dto.ContactImportRequest;
+import com.example.demo.dto.ContactImportResponse;
 import com.example.demo.dto.ContactLinkRequest;
+import com.example.demo.dto.ContactRequest;
+import com.example.demo.dto.Graph;
 import com.example.demo.dto.InitiateOtpRequest;
 import com.example.demo.dto.RegisterRequest;
 import com.example.demo.repository.OtpRepository;
@@ -20,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -132,6 +137,36 @@ class ContactControllerIT {
                     new ContactLinkRequest(a, b), headers, Void.class);
             assertThat(unlinkResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         }
+    }
+
+    @Test
+    void importingContactsAddsPlaceholdersToTheGraphAndIsIdempotent() {
+        AuthResponse owner = register("Imp", "Orter");
+        HttpHeaders headers = authHeaders(owner.token());
+        ContactImportRequest request = new ContactImportRequest(List.of(
+                new ContactRequest("Ada", "Lovelace", null, "555-010-0001"),
+                new ContactRequest("Alan", "Turing", "Bletchley", null)));
+
+        ResponseEntity<ContactImportResponse> first = exchange("/api/contacts/import", HttpMethod.POST,
+                request, headers, ContactImportResponse.class);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(first.getBody().created()).hasSize(2);
+
+        ResponseEntity<ContactImportResponse> again = exchange("/api/contacts/import", HttpMethod.POST,
+                request, headers, ContactImportResponse.class);
+        assertThat(again.getBody().created()).isEmpty();
+        assertThat(again.getBody().skippedDuplicates()).isEqualTo(2);
+
+        Graph graph = exchange("/api/graph", HttpMethod.GET, null, headers, Graph.class).getBody();
+        assertThat(graph.nodes()).extracting(n -> n.firstName()).contains("Ada", "Alan");
+        assertThat(graph.edges()).hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void importRequiresAuthentication() {
+        ResponseEntity<String> response = exchange("/api/contacts/import", HttpMethod.POST,
+                new ContactImportRequest(List.of()), new HttpHeaders(), String.class);
+        assertThat(response.getStatusCode().is4xxClientError()).isTrue();
     }
 
     private static UUID randomUuid() {

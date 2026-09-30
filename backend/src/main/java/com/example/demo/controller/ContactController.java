@@ -1,6 +1,8 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.AddTagRequest;
+import com.example.demo.dto.ContactImportRequest;
+import com.example.demo.dto.ContactImportResponse;
 import com.example.demo.dto.ContactLinkRequest;
 import com.example.demo.dto.ContactRequest;
 import com.example.demo.dto.GraphNode;
@@ -28,6 +30,13 @@ public class ContactController {
     @PostMapping
     public GraphNode createContact(@RequestBody ContactRequest request, @AuthenticationPrincipal UUID ownerId) {
         return contactService.createContact(ownerId, request);
+    }
+
+    /** Bulk-creates placeholders from the user's address book (device contacts, vCard or CSV). */
+    @PostMapping("/import")
+    public ContactImportResponse importContacts(@RequestBody ContactImportRequest request,
+                                                @AuthenticationPrincipal UUID ownerId) {
+        return contactService.importContacts(ownerId, request);
     }
 
     @PatchMapping("/{id}")
