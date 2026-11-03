@@ -1,46 +1,24 @@
-# Dependencies
-node_modules/
-**/node_modules/
-
-# Environment files
-.env
-.env.*
-!.env.example
-!.env.mobile
-
-# Build artifacts
-dist/
-build/
-**/build/
-out/
-.gradle/
-
-# IDE/System files
-.vscode/
-.idea/
-.DS_Store
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Claude Code session artifacts
-.claude/
+node_modules
+dist
+dist-ssr
+*.local
 
-# Docker
-postgres_data/
-.env
-
-.md
-
-# SSL / TLS certificates & keys
-certs/
-*.key
-*.crt
-*.pem
-*.cert
-
-# Working scratch
-.phone-number-encryption/
-
-# Firebase config (native, must be supplied per-environment; never commit)
-frontend/android/app/google-services.json
-frontend/ios/App/App/GoogleService-Info.plist
-
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
