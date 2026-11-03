@@ -144,22 +144,27 @@ export const drawTagPolygons = (ctx: CanvasRenderingContext2D, globalScale: numb
     const pad = 24 / globalScale; // a constant on-screen margin around the people
     const color = GROUP_PALETTE[gi % GROUP_PALETTE.length];
 
+    // The margin is built into the outline (each corner pushed away from the centre), so the polygon is
+    // a single fill. Stroking a wide outline here cost far more per frame than the rest of the drawing.
+    const cx = hull.reduce((sum, p) => sum + p[0], 0) / hull.length;
+    const cy = hull.reduce((sum, p) => sum + p[1], 0) / hull.length;
     ctx.save();
     ctx.beginPath();
-    hull.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    hull.forEach(([x, y], i) => {
+      const dx = x - cx;
+      const dy = y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const px = x + (dx / len) * pad;
+      const py = y + (dy / len) * pad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
     ctx.closePath();
-    ctx.globalAlpha = 0.08;
+    ctx.globalAlpha = 0.12;
     ctx.fillStyle = color;
     ctx.fill();
-    // A wide, round-joined stroke of the same outline gives the margin around the people.
-    ctx.globalAlpha = 0.1;
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = pad * 2;
-    ctx.strokeStyle = color;
-    ctx.stroke();
 
     const top = Math.min(...hull.map((p) => p[1]));
-    const cx = hull.reduce((sum, p) => sum + p[0], 0) / hull.length;
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = color;
     ctx.font = `${12 / globalScale}px Sans-Serif`;

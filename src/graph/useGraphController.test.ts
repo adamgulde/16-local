@@ -140,8 +140,12 @@ describe('useGraphController (local data)', () => {
     await act(() => result.current.handleCreateContact({ firstName: 'Ula' }));
     await act(() => result.current.handleCreateContact({ firstName: 'Vic' }));
     const [ula, vic] = ['Ula', 'Vic'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+    // Timestamps have millisecond resolution, so wait between actions to keep their order unambiguous.
+    await new Promise((r) => setTimeout(r, 5));
+    act(() => result.current.selectNode(vic));
     expect(result.current.recentNodes.map((n) => n.id)).toEqual([vic, ula]);
 
+    await new Promise((r) => setTimeout(r, 5));
     act(() => result.current.selectNode(ula));
     expect(result.current.recentNodes[0].id).toBe(ula);
     expect(result.current.recentNodes.some((n) => n.kind === 'SELF')).toBe(false);
