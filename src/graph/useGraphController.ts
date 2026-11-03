@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
-import { fetchGraph, fetchSelfProfile, updateSelf, type Graph, type GraphNode, type SelfProfile } from '../services/graphService';
+import { fetchGraph, fetchSelfProfile, updateSelf, type Graph, type GraphEdge, type GraphNode, type SelfProfile } from '../services/graphService';
 import { recentPeople, peopleNeedingInfo } from './people';
 import {
   createContact,
@@ -487,6 +487,34 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     );
   }, [multiIds, withPending, applyToEach]);
 
+  // Links every selected person to every other one. Pairs already linked are skipped, so it's safe to repeat.
+  const handleBulkConnect = useCallback(() => {
+    const ids = [...multiIds].filter((id) => nodesById.get(id)?.kind !== 'SELF');
+    return withPending(
+      'bulk-connect',
+      async () => {
+        const added: GraphEdge[] = [];
+        try {
+          for (let i = 0; i < ids.length; i++) {
+            for (let j = i + 1; j < ids.length; j++) {
+              const a = ids[i];
+              const b = ids[j];
+              if (linkedIdsFor(a).has(b)) continue;
+              await linkContacts(a, b);
+              added.push({ source: a, target: b, kind: 'LINK' });
+            }
+          }
+        } finally {
+          if (added.length > 0) {
+            setGraph((prev) => ({ ...prev, edges: [...prev.edges, ...added] }));
+          }
+          markInteracted(ids);
+        }
+      },
+      'Could not connect everyone.'
+    );
+  }, [multiIds, nodesById, linkedIdsFor, withPending, markInteracted]);
+
   // Applies one tag to everyone selected, using the same rules as on a single card.
   const handleBulkAddTag = useCallback(
     (input: TagInput) => {
@@ -673,6 +701,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     clearMulti,
     handleNodeTap,
     handleBulkCloseness,
+    handleBulkConnect,
     handleBulkDelete,
     handleBulkAddTag,
   };

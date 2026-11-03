@@ -150,4 +150,20 @@ describe('useGraphController (local data)', () => {
     expect(result.current.recentNodes[0].id).toBe(ula);
     expect(result.current.recentNodes.some((n) => n.kind === 'SELF')).toBe(false);
   });
+
+  it('select mode: connecting a group links every pair once, and repeating adds nothing', async () => {
+    const { result } = await setup();
+    for (const name of ['Wren', 'Xan', 'Yui']) await act(() => result.current.handleCreateContact({ firstName: name }));
+    const ids = ['Wren', 'Xan', 'Yui'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+
+    act(() => result.current.toggleSelectMode());
+    for (const id of ids) await act(() => result.current.handleNodeTap(id));
+    await act(() => result.current.handleBulkConnect());
+    const links = () => result.current.graph.edges.filter((e) => e.kind === 'LINK');
+    expect(links()).toHaveLength(3);
+    for (const a of ids) for (const b of ids) if (a !== b) expect(result.current.linkedIdsFor(a).has(b)).toBe(true);
+
+    await act(() => result.current.handleBulkConnect());
+    expect(links()).toHaveLength(3);
+  });
 });

@@ -12,6 +12,8 @@ interface MultiSelectPanelProps {
   onCloseness: (value: number) => void;
   onAddTag: (payload: TagInput) => void;
   onDelete: () => void;
+  /** Links every selected person to every other one. */
+  onConnect: () => void;
   /** Closes the panel: leaves select mode and clears the selection. */
   onClose: () => void;
   busy?: boolean;
@@ -24,7 +26,7 @@ const sectionTitle: CSSProperties = { margin: '10px 0 6px', fontSize: 11, fontWe
  * What you can do to several people at once, using the same rules as a single contact card. Notes and
  * bios stay per person, so they aren't offered here.
  */
-export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, onClose, busy = false, compact = false }: MultiSelectPanelProps) => {
+export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, onConnect, onClose, busy = false, compact = false }: MultiSelectPanelProps) => {
   const [dictionary, setDictionary] = useState<Tag[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -73,6 +75,21 @@ export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, on
 
       {selected.length > 0 && (
         <div style={{ overflowY: 'auto', minHeight: 0 }}>
+          {selected.length >= 2 && (
+            <>
+              <div style={sectionTitle}>Connections</div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onConnect}
+                style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '6px 12px', background: 'rgba(61, 139, 255, 0.15)', border: '1px solid #3d8bff', borderRadius: 6, color: '#6ab0ff', fontSize: 13, cursor: 'pointer' }}
+              >
+                Connect all {selected.length} to each other
+              </button>
+              <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 4 }}>Anyone already connected stays as they are.</div>
+            </>
+          )}
+
           <div style={sectionTitle}>Closeness</div>
           <ClosenessControl value={average} disabled={busy} onCommit={onCloseness} />
           <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 4 }}>Sets everyone selected to this value ({closenessLabel(average)} on average now).</div>
