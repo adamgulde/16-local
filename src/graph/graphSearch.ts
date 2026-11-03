@@ -1,18 +1,16 @@
 import type { Graph, GraphNode } from '../services/graphService';
-import { buildTagIndex, type TagIndex } from '../utils/tagTree';
 import { contactFullName } from './mapping';
 
 export type GraphSearchMode = 'names' | 'tags' | 'about' | 'notes';
 
-/** Tag filter for tags-mode search: dictionary subtrees and/or free-text labels. */
+/** Tag filter for tags-mode search: the chosen tags, matched with "all of" or "any of". */
 export interface TagCriteria {
   tagIds: string[];
-  labels: string[];
   matchAll: boolean;
 }
 
 // The "nothing picked yet" tags-mode criteria — shared by the tag picker and the graph controller.
-export const EMPTY_TAG_CRITERIA: TagCriteria = { tagIds: [], labels: [], matchAll: true };
+export const EMPTY_TAG_CRITERIA: TagCriteria = { tagIds: [], matchAll: true };
 
 export const GRAPH_SEARCH_MODES: { value: GraphSearchMode; label: string }[] = [
   { value: 'names', label: 'Names' },
@@ -79,30 +77,14 @@ export const findPathBFS = (graph: Graph, fromId: string, toId: string): string[
 };
 
 // Names/about/notes: a plain case-insensitive substring match, capped so a huge graph never
-// floods the suggestion dropdown. Tags: reuses the same subtree + free-text-label semantics as
-// the old server-side tag search (utils/tagTree), matched against each node's own TagAssignment[].
-export const searchGraphNodes = (
-  graph: Graph,
-  mode: GraphSearchMode,
-  term: string,
-  tagCriteria?: TagCriteria,
-  tagIndex?: TagIndex
-): GraphNode[] => {
+// floods the suggestion dropdown. Tags: a person matches when they carry the chosen tags.
+export const searchGraphNodes = (graph: Graph, mode: GraphSearchMode, term: string, tagCriteria?: TagCriteria): GraphNode[] => {
   if (mode === 'tags') {
-    if (!tagCriteria || (tagCriteria.tagIds.length === 0 && tagCriteria.labels.length === 0)) return [];
-    const index = tagIndex ?? buildTagIndex([]);
-    const subtrees = tagCriteria.tagIds.map((id) => index.subtreeOf(id));
-    const labels = tagCriteria.labels.map((l) => l.toLowerCase());
+    if (!tagCriteria || tagCriteria.tagIds.length === 0) return [];
+    const wanted = tagCriteria.tagIds;
     return graph.nodes.filter((n) => {
-      const idMatch = subtrees.length > 0 && n.tags.some((t) => t.tagId && subtrees.some((s) => s.has(t.tagId!)));
-      const labelMatch = labels.length > 0 && n.tags.some((t) => labels.includes(t.label.toLowerCase()));
-      if (tagCriteria.matchAll) {
-        const groups = [subtrees.length > 0 ? idMatch : null, labels.length > 0 ? labelMatch : null].filter(
-          (v): v is boolean => v !== null
-        );
-        return groups.length > 0 && groups.every(Boolean);
-      }
-      return idMatch || labelMatch;
+      const have = new Set(n.tags.map((t) => t.id));
+      return tagCriteria.matchAll ? wanted.every((id) => have.has(id)) : wanted.some((id) => have.has(id));
     });
   }
 

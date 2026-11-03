@@ -3,7 +3,6 @@
 
 export type NodeKind = 'SELF' | 'PLACEHOLDER';
 export type GraphEdgeKind = 'DIRECT' | 'LINK';
-export type TagKind = 'SELF' | 'CUSTOM' | 'PRIVATE';
 
 /** Closeness, 1 (distant) to 10 (inner circle). Decimals are allowed. */
 export type Strength = number;
@@ -14,32 +13,10 @@ export const DEFAULT_STRENGTH: Strength = 5.5;
 export const isStrength = (n: unknown): n is Strength =>
   typeof n === 'number' && Number.isFinite(n) && n >= STRENGTH_MIN && n <= STRENGTH_MAX;
 
-export interface TagAssignment {
-  id: string;
-  category: string;
-  label: string;
-  isSelfTag: boolean;
-  isMine: boolean;
-  kind: TagKind;
-  tagId: string | null;
-  parentId: string | null;
-  level: number;
-  icon: string | null;
-  fullPath: string;
-}
-
-/** One node of the curated tag dictionary. Level-1 nodes are categories, never applied directly. */
+/** A tag from the one global list you type yourself. */
 export interface Tag {
   id: string;
-  category: string;
   label: string;
-  parentId: string | null;
-  level: number;
-  icon: string | null;
-  displayOrder: number;
-  fullPath: string;
-  hasChildren: boolean;
-  selectable: boolean;
 }
 
 export interface GraphNode {
@@ -49,7 +26,7 @@ export interface GraphNode {
   lastName: string;
   about: string;
   phoneNumber: string | null;
-  tags: TagAssignment[];
+  tags: Tag[];
   note: string;
   strength: Strength; // SELF is always STRENGTH_MAX (the centre of the graph)
   knownPersonally: boolean; // false: added, but not connected to you directly
@@ -77,10 +54,10 @@ export interface ContactInput {
   knownPersonally?: boolean;
 }
 
+/** Tag to apply: an existing tag by id, or a label (reused if a tag with that name exists). */
 export interface TagInput {
   tagId?: string;
-  customLabel?: string;
-  parentTagId?: string | null;
+  label?: string;
 }
 
 export interface ImportResult {

@@ -12,9 +12,8 @@ import {
   type CreateContactPayload,
   type UpdateContactPayload,
 } from '../services/contactService';
-import { addTagToUser, fetchAllTags, type AddTagPayload, type TagAssignment, type TagsUpdate } from '../services/tagService';
+import { addTagToUser, fetchAllTags, type Tag, type TagInput, type TagsUpdate } from '../services/tagService';
 import { putContactNote } from '../services/contactService';
-import { buildTagIndex } from '../utils/tagTree';
 import { getSafeErrorMessage } from '../utils/errors';
 import { graphToForceGraphData, contactFullName, type ForceGraphData } from './mapping';
 import { EMPTY_TAG_CRITERIA, findPathBFS, searchGraphNodes, type GraphSearchMode, type TagCriteria } from './graphSearch';
@@ -47,8 +46,6 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
 
   const [searchMode, setSearchMode] = useState<GraphSearchMode>('names');
   const [tagCriteria, setTagCriteria] = useState<TagCriteria>(EMPTY_TAG_CRITERIA);
-  const [tagDictionary, setTagDictionary] = useState<Awaited<ReturnType<typeof fetchAllTags>>>([]);
-  const tagIndex = useMemo(() => buildTagIndex(tagDictionary), [tagDictionary]);
 
   const [selfProfile, setSelfProfile] = useState<SelfProfile | null>(null);
 
@@ -69,14 +66,14 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
 
   const searchMatches = useMemo(() => {
     if (searchMode === 'tags') {
-      return searchGraphNodes(graph, 'tags', '', tagCriteria, tagIndex).slice(0, 20);
+      return searchGraphNodes(graph, 'tags', '', tagCriteria).slice(0, 20);
     }
-    return searchGraphNodes(graph, searchMode, searchTerm, undefined, tagIndex).slice(0, 8);
-  }, [graph, searchMode, searchTerm, tagCriteria, tagIndex]);
+    return searchGraphNodes(graph, searchMode, searchTerm).slice(0, 8);
+  }, [graph, searchMode, searchTerm, tagCriteria]);
 
   const tagMatchIds = useMemo(() => {
     if (searchMode !== 'tags') return null;
-    if (tagCriteria.tagIds.length === 0 && tagCriteria.labels.length === 0) return null;
+    if (tagCriteria.tagIds.length === 0) return null;
     return new Set(searchMatches.map((n) => n.id));
   }, [searchMode, searchMatches, tagCriteria]);
 
@@ -117,9 +114,9 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
   // own profile. There's no background refresh; only this load and the Settings refresh re-run it.
   const loadData = useCallback(async () => {
     try {
-      const [graphData, tags, profile] = await Promise.all([fetchGraph(), fetchAllTags(), fetchSelfProfile()]);
+      // Also warms the global tag list, so tag suggestions are ready when a card opens.
+      const [graphData, profile] = await Promise.all([fetchGraph(), fetchSelfProfile(), fetchAllTags()]);
       setGraph(graphData);
-      setTagDictionary(tags);
       setSelfProfile(profile);
       setInitError(null);
     } catch {
@@ -468,12 +465,12 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
 
   // Applies one tag to everyone selected, using the same rules as on a single card.
   const handleBulkAddTag = useCallback(
-    (input: AddTagPayload) => {
+    (input: TagInput) => {
       const ids = [...multiIds];
       return withPending(
         'bulk-tag',
         async () => {
-          const results = new Map<string, TagAssignment[]>();
+          const results = new Map<string, Tag[]>();
           const failed: string[] = [];
           await applyToEach(ids, async (id) => {
             try {

@@ -9,8 +9,7 @@ export type {
   GraphNode,
   NodeKind,
   Strength,
-  TagAssignment,
-  TagKind,
+  Tag,
 } from '../data/types';
 
 /** Your whole local graph: you at the centre, your contacts and their links. */

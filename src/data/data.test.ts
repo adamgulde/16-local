@@ -1,29 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openNodeDb } from './testing/nodeDb';
-import { initDataLayer, loadTaxonomy } from './store';
+import { initDataLayer } from './store';
 import { migrate, MIGRATIONS } from './migrate';
 import type { Db } from './db';
 import { createContact, patchContact, deleteContact, importContacts, linkContacts, unlinkContacts, upsertNote, MAX_CONTACTS, MAX_IMPORT_BATCH } from './contacts';
-import { addTagToContact, getTagsForContact, getAllTags, removeTagFromContact, MAX_TAGS_PER_CONTACT } from './tags';
+import { addTagToContact, getTagsForContact, getTagsByContact, listTags, removeTagFromContact, MAX_TAGS_PER_CONTACT, MAX_TAG_LENGTH } from './tags';
 import { buildGraph, updateSelfProfile } from './graph';
 import { cleanPhone, phoneKey } from './phone';
 import { DataError } from './errors';
-import type { Taxonomy } from './taxonomy';
 
 let d: Db;
-let tax: Taxonomy;
 
 beforeEach(async () => {
   d = openNodeDb();
   await initDataLayer(d);
-  tax = await loadTaxonomy(d);
 });
-
-const find = (label: string, level?: number) => {
-  const n = tax.ordered.find((t) => t.label === label && (level === undefined || t.level === level));
-  if (!n) throw new Error(`no tag ${label}`);
-  return n;
-};
 
 describe('phone normalization', () => {
   it('formats US numbers like the server did', () => {
@@ -83,7 +74,7 @@ describe('contacts', () => {
     const a = await createContact(d, { firstName: 'A' });
     const b = await createContact(d, { firstName: 'B' });
     await linkContacts(d, a.id, b.id);
-    await addTagToContact(d, a.id, { tagId: find('Coffee', undefined).id });
+    await addTagToContact(d, a.id, { label: 'Coffee' });
     await deleteContact(d, a.id);
     const g = await buildGraph(d);
     expect(g.edges.filter((e) => e.kind === 'LINK')).toHaveLength(0);
@@ -148,55 +139,61 @@ describe('links', () => {
 });
 
 describe('tags', () => {
-  it('lists the dictionary with paths and selectability', async () => {
-    const all = await getAllTags(d);
-    expect(all.length).toBe(455);
-    const cat = all.find((t) => t.level === 1)!;
-    expect(cat.selectable).toBe(false);
-    const leaf = all.find((t) => t.level > 1 && t.selectable)!;
-    expect(leaf.fullPath).toContain(' › ');
-  });
-
-  it('applies a dictionary tag and a custom label under a category', async () => {
+  it('creates a tag by typing it and applies it to a contact', async () => {
     const c = await createContact(d, { firstName: 'Hal' });
-    const education = find('Education', 1);
-    const first = await addTagToContact(d, c.id, { tagId: find('High School').id });
-    expect(first).toHaveLength(1);
-    expect(first[0]).toMatchObject({ category: 'Education', label: 'High School', tagId: expect.any(String) });
-    const custom = await addTagToContact(d, c.id, { customLabel: 'Night school', parentTagId: education.id });
-    expect(custom.map((t) => t.label).sort()).toEqual(['High School', 'Night school']);
-    await expect(addTagToContact(d, c.id, { customLabel: 'night SCHOOL', parentTagId: education.id })).rejects.toThrow('already applied');
+    const tags = await addTagToContact(d, c.id, { label: 'Climbing' });
+    expect(tags).toEqual([expect.objectContaining({ label: 'Climbing' })]);
+    expect((await listTags(d)).map((t) => t.label)).toEqual(['Climbing']);
   });
 
-  it('rejects tagging with a category, a duplicate, or both/neither inputs', async () => {
+  it('reuses an existing tag when the name matches, ignoring case and extra spaces', async () => {
+    const a = await createContact(d, { firstName: 'A' });
+    const b = await createContact(d, { firstName: 'B' });
+    await addTagToContact(d, a.id, { label: 'Climbing' });
+    await addTagToContact(d, b.id, { label: '  climbing   ' });
+    expect(await listTags(d)).toHaveLength(1);
+    const byContact = await getTagsByContact(d);
+    expect(byContact.get(a.id)?.[0].id).toBe(byContact.get(b.id)?.[0].id);
+  });
+
+  it('applies an existing tag by id', async () => {
+    const a = await createContact(d, { firstName: 'A' });
+    const b = await createContact(d, { firstName: 'B' });
+    await addTagToContact(d, a.id, { label: 'Chess' });
+    const [chess] = await listTags(d);
+    await addTagToContact(d, b.id, { tagId: chess.id });
+    expect((await getTagsForContact(d, b.id)).map((t) => t.label)).toEqual(['Chess']);
+  });
+
+  it('refuses a tag a person already has, a blank tag, and an over-long tag', async () => {
     const c = await createContact(d, { firstName: 'Ivy' });
-    const category = find('Education', 1);
-    await expect(addTagToContact(d, c.id, { tagId: category.id })).rejects.toThrow('within this category');
-    await expect(addTagToContact(d, c.id, {})).rejects.toThrow('either a tagId or a customLabel');
-    await expect(addTagToContact(d, c.id, { tagId: category.id, customLabel: 'x' })).rejects.toThrow('not both');
-    const hs = find('High School');
-    await addTagToContact(d, c.id, { tagId: hs.id });
-    await expect(addTagToContact(d, c.id, { tagId: hs.id })).rejects.toThrow('already applied');
+    await addTagToContact(d, c.id, { label: 'Jazz' });
+    await expect(addTagToContact(d, c.id, { label: 'jazz' })).rejects.toThrow('already applied');
+    await expect(addTagToContact(d, c.id, { label: '   ' })).rejects.toThrow('Type a tag first');
+    await expect(addTagToContact(d, c.id, { label: 'x'.repeat(MAX_TAG_LENGTH + 1) })).rejects.toThrow(`${MAX_TAG_LENGTH} characters`);
   });
 
-  it('replaces the earlier choice within a single-select group', async () => {
-    const c = await createContact(d, { firstName: 'Jo' });
-    const age1 = tax.ordered.find((t) => t.label === '18–29')!;
-    const age2 = tax.ordered.find((t) => t.label === '30–39')!;
-    await addTagToContact(d, c.id, { tagId: age1.id });
-    const after = await addTagToContact(d, c.id, { tagId: age2.id });
-    expect(after.map((t) => t.label)).toEqual(['30–39']);
-  });
-
-  it('caps tags per contact and removes assignments', async () => {
+  it('caps the number of tags on one person', async () => {
     const c = await createContact(d, { firstName: 'Kai' });
-    const picks = tax.ordered.filter((t) => tax.isSelectable(t) && !tax.singleSelectGroup(t.id)).slice(0, MAX_TAGS_PER_CONTACT);
-    for (const p of picks) await addTagToContact(d, c.id, { tagId: p.id });
-    const extra = tax.ordered.find((t) => tax.isSelectable(t) && !picks.includes(t) && !tax.singleSelectGroup(t.id))!;
-    await expect(addTagToContact(d, c.id, { tagId: extra.id })).rejects.toThrow('maximum');
-    const [first] = await getTagsForContact(d, c.id);
-    await removeTagFromContact(d, c.id, first.id);
-    expect(await getTagsForContact(d, c.id)).toHaveLength(MAX_TAGS_PER_CONTACT - 1);
+    for (let i = 0; i < MAX_TAGS_PER_CONTACT; i++) await addTagToContact(d, c.id, { label: `Tag ${i}` });
+    await expect(addTagToContact(d, c.id, { label: 'One more' })).rejects.toThrow('at most');
+  });
+
+  it('removes a tag from one person but keeps it in the global list', async () => {
+    const c = await createContact(d, { firstName: 'Lee' });
+    await addTagToContact(d, c.id, { label: 'Tea' });
+    const [tea] = await getTagsForContact(d, c.id);
+    await removeTagFromContact(d, c.id, tea.id);
+    expect(await getTagsForContact(d, c.id)).toHaveLength(0);
+    expect(await listTags(d)).toHaveLength(1);
+  });
+
+  it('deleting a person removes their tag assignments', async () => {
+    const c = await createContact(d, { firstName: 'Max' });
+    await addTagToContact(d, c.id, { label: 'Hiking' });
+    await deleteContact(d, c.id);
+    const [{ n }] = await d.all<{ n: number }>('SELECT COUNT(*) AS n FROM contact_tags');
+    expect(n).toBe(0);
   });
 });
 
@@ -214,35 +211,33 @@ describe('graph', () => {
     expect(g.nodes.find((n) => n.id === b.id)?.strength).toBe(1);
   });
 
-  it('seeds the tag dictionary only once across re-initialisation', async () => {
-    await initDataLayer(d);
-    const [{ n }] = await d.all<{ n: number }>('SELECT COUNT(*) AS n FROM tags');
-    expect(n).toBe(455);
-  });
 });
 
-describe('closeness migration (002) and later', () => {
-  it('rescales 1–5 values to 1–10 and keeps links and tags attached', async () => {
+describe('migrations 002–004', () => {
+  it('rescales 1–5 values, keeps links, drops seeded tags and keeps typed tags as global', async () => {
     // Build a database at schema version 1 with the old 1–5 integer closeness.
     const raw = openNodeDb();
     await raw.exec('PRAGMA foreign_keys = ON');
     await raw.exec(MIGRATIONS[0].sql);
     await raw.exec('PRAGMA user_version = 1');
-    const seed = (await import('./seed/tags.json')).default as { id: string }[];
-    await raw.run(`INSERT INTO tags (id, category, label, parent_id, level, icon, display_order, self_only, single_select) VALUES (?, 'C', 'T', NULL, 2, NULL, 0, 0, 0)`, [seed[0].id]);
+    await raw.run(`INSERT INTO tags (id, category, label, parent_id, level, icon, display_order, self_only, single_select) VALUES ('seeded-1', 'C', 'T', NULL, 2, NULL, 0, 0, 0)`);
     const now = '2026-01-01T00:00:00Z';
     for (const [id, strength] of [['00000000-0000-4000-8000-000000000001', 1], ['00000000-0000-4000-8000-000000000002', 2], ['00000000-0000-4000-8000-000000000003', 3], ['00000000-0000-4000-8000-000000000004', 4], ['00000000-0000-4000-8000-000000000005', 5]] as const) {
       await raw.run(`INSERT INTO contacts (id, first_name, strength, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, [id, id.slice(-1), strength, now, now]);
     }
     await raw.run(`INSERT INTO contact_links (id, contact_a_id, contact_b_id, created_at) VALUES ('l1', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', ?)`, [now]);
-    await raw.run(`INSERT INTO contact_tags (id, contact_id, tag_id) VALUES ('t1', '00000000-0000-4000-8000-000000000003', ?)`, [seed[0].id]);
+    await raw.run(`INSERT INTO contact_tags (id, contact_id, tag_id) VALUES ('t1', '00000000-0000-4000-8000-000000000003', 'seeded-1')`);
+    await raw.run(`INSERT INTO contact_tags (id, contact_id, custom_label) VALUES ('t2', '00000000-0000-4000-8000-000000000004', 'Climbing')`);
+    await raw.run(`INSERT INTO contact_tags (id, contact_id, custom_label) VALUES ('t3', '00000000-0000-4000-8000-000000000005', 'climbing')`);
 
     await migrate(raw);
 
     const rows = await raw.all<{ id: string; strength: number }>('SELECT id, strength FROM contacts ORDER BY id');
     expect(rows.map((r) => r.strength)).toEqual([1, 3.25, 5.5, 7.75, 10]);
     expect(await raw.all('SELECT * FROM contact_links')).toHaveLength(1);
-    expect(await raw.all('SELECT * FROM contact_tags')).toHaveLength(1);
+    // Seeded assignments are gone; the two typed "climbing" labels became one global tag.
+    expect((await raw.all<{ label: string }>('SELECT label FROM tags')).map((t) => t.label)).toEqual(['Climbing']);
+    expect(await raw.all('SELECT * FROM contact_tags')).toHaveLength(2);
     const [{ user_version }] = await raw.all<{ user_version: number }>('PRAGMA user_version');
     expect(user_version).toBe(MIGRATIONS.length);
   });

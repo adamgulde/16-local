@@ -23,7 +23,6 @@ import { Instructions } from './Instructions';
 import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, SelectIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField } from './tags/TagQueryField';
-import { pickerRows } from './tags/tagTheme';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 import { APP_VERSION } from '../version';
 
@@ -345,8 +344,6 @@ export const MobileGraphView = () => {
               criteria={c.tagCriteria}
               onChange={c.setTagCriteria}
               matchCount={c.tagMatchIds ? c.tagMatchIds.size : null}
-              loading={false}
-              rows={pickerRows('regular', true)}
               layout="inline"
               placeholder={GRAPH_SEARCH_PLACEHOLDERS.tags}
               inputStyle={{ padding: '10px 12px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px' }}

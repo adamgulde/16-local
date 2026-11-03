@@ -2,6 +2,7 @@ import type { Db } from './db';
 import init001 from './migrations/001_init.sql?raw';
 import closenessScale002 from './migrations/002_closeness_scale.sql?raw';
 import knownPersonally003 from './migrations/003_known_personally.sql?raw';
+import globalTags004 from './migrations/004_global_tags.sql?raw';
 
 interface Migration {
   sql: string;
@@ -14,6 +15,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { sql: init001 },
   { sql: closenessScale002, rebuildsReferencedTable: true },
   { sql: knownPersonally003 },
+  { sql: globalTags004 },
 ];
 
 /** Applies pending migrations, tracked in SQLite's user_version pragma. Idempotent. */

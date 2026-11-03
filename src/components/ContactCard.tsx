@@ -246,7 +246,6 @@ export const ContactCard = ({
           <hr style={dividerStyle} />
           <TagsAndNotes
             subjectId={node.id}
-            isCurrentUser={false}
             tags={node.tags}
             onTagsChange={onTagsChange}
             note={node.note}

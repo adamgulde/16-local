@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { dividerStyle, sectionHeaderStyle } from './cardStyles';
 import { TagSection } from './tags/TagSection';
-import type { TagAssignment, TagsUpdate } from '../services/tagService';
+import type { Tag, TagsUpdate } from '../services/tagService';
 
 interface TagsAndNotesProps {
   subjectId: string;
-  isCurrentUser: boolean;
-  tags?: TagAssignment[] | null;
+  tags?: Tag[] | null;
   onTagsChange?: (update: TagsUpdate) => void;
   // The contact's note, as loaded with the graph ("" if none) — a contact's note only ever
   // arrives on its `GraphNode` (PLAN.md §3); there's no separate fetch-by-id endpoint.
@@ -19,7 +18,6 @@ interface TagsAndNotesProps {
 
 export const TagsAndNotes = ({
   subjectId,
-  isCurrentUser,
   tags,
   onTagsChange,
   note,
@@ -63,16 +61,10 @@ export const TagsAndNotes = ({
 
   return (
     <div>
-      <TagSection
-        key={subjectId}
-        subjectId={subjectId}
-        isCurrentUser={isCurrentUser}
-        tags={tags}
-        onTagsChange={onTagsChange}
-      />
+      <TagSection key={subjectId} subjectId={subjectId} tags={tags ?? []} onTagsChange={onTagsChange ?? (() => undefined)} />
 
-      {/* Private Notes Section (on other users only) */}
-      {!isCurrentUser && (
+      {/* Private notes: only you ever see these */}
+      {(
         <>
           <hr style={dividerStyle} />
           <div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { GraphNode } from '../services/graphService';
-import type { AddTagPayload, Tag } from '../services/tagService';
+import type { Tag, TagInput } from '../services/tagService';
 import { fetchAllTags } from '../services/tagService';
 import { contactFullName } from '../graph/mapping';
 import { closenessLabel } from '../graph/closeness';
@@ -10,7 +10,7 @@ import { CloseIcon, DisconnectIcon, SearchIcon } from './Icons';
 interface MultiSelectPanelProps {
   selected: GraphNode[];
   onCloseness: (value: number) => void;
-  onAddTag: (payload: AddTagPayload) => void;
+  onAddTag: (payload: TagInput) => void;
   onDelete: () => void;
   /** Closes the panel: leaves select mode and clears the selection. */
   onClose: () => void;
@@ -37,7 +37,7 @@ export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, on
   const tagMatches = useMemo(() => {
     const q = tagQuery.trim().toLowerCase();
     if (!q) return [];
-    return dictionary.filter((t) => t.selectable && t.fullPath.toLowerCase().includes(q)).slice(0, 8);
+    return dictionary.filter((t) => t.label.toLowerCase().includes(q)).slice(0, 8);
   }, [dictionary, tagQuery]);
 
   // The closeness shown is the average, so a mixed selection reads sensibly.
@@ -100,10 +100,22 @@ export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, on
               }}
               style={{ display: 'block', width: '100%', minHeight: 40, textAlign: 'left', padding: '6px 4px', background: 'none', border: 'none', borderBottom: '1px solid #2c2c2e', color: '#dfe6ee', fontSize: 13, cursor: 'pointer' }}
             >
-              {t.fullPath}
+              {t.label}
             </button>
           ))}
-          <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 4 }}>Custom labels are added from a single contact’s card.</div>
+          {tagQuery.trim() && !dictionary.some((t) => t.label.toLowerCase() === tagQuery.trim().toLowerCase()) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                onAddTag({ label: tagQuery.trim() });
+                setTagQuery('');
+              }}
+              style={{ display: 'block', width: '100%', minHeight: 40, textAlign: 'left', padding: '6px 4px', background: 'none', border: 'none', color: '#6ab0ff', fontSize: 13, cursor: 'pointer' }}
+            >
+              Create “{tagQuery.trim()}” for everyone
+            </button>
+          )}
 
           <div style={{ ...sectionTitle, marginTop: 14 }}>Danger zone</div>
           {!confirming ? (

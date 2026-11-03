@@ -41,8 +41,8 @@ export const Instructions = () => (
     <section style={sectionStyle}>
       <h3 style={headingStyle}>Tags and notes</h3>
       <p style={textStyle}>
-        Tag people from the curated list or write your own tags, and keep a private note on each person.
-        Search by name, tag, about text, or notes from the search bar.
+        Type a tag on a person to add it. Tags are one shared list: a tag you type once can be picked for anyone.
+        Keep a private note on each person, and search by name, tag, about text, or notes from the search bar.
       </p>
     </section>
 

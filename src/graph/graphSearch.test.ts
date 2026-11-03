@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { Graph, GraphNode } from '../services/graphService';
-import { buildTagIndex } from '../utils/tagTree';
-import type { Tag } from '../data/types';
 import { findPathBFS, searchGraphNodes } from './graphSearch';
 
 const base: Omit<GraphNode, 'id' | 'kind' | 'firstName' | 'lastName'> = {
@@ -70,22 +68,25 @@ describe('searchGraphNodes', () => {
     expect(searchGraphNodes(graph, 'names', '   ')).toEqual([]);
   });
 
-  it('tags mode: matches a tag inside the selected subtree', () => {
-    const dictionary: Tag[] = [
-      { id: 'music', category: 'Interests', label: 'Music', parentId: null, level: 1, icon: null, displayOrder: 0, fullPath: 'Interests', hasChildren: true, selectable: false },
-      { id: 'jazz', category: 'Interests', label: 'Jazz', parentId: 'music', level: 2, icon: null, displayOrder: 0, fullPath: 'Interests › Jazz', hasChildren: false, selectable: true },
-    ];
-    const index = buildTagIndex(dictionary);
+  it('tags mode: matches people who carry the chosen tag', () => {
+    const tagged: Graph = {
+      ...graph,
+      nodes: graph.nodes.map((n) => (n.id === 'b' ? { ...n, tags: [{ id: 'jazz', label: 'Jazz' }] } : n)),
+    };
+    const hits = searchGraphNodes(tagged, 'tags', '', { tagIds: ['jazz'], matchAll: true });
+    expect(hits.map((n) => n.id)).toEqual(['b']);
+  });
+
+  it('tags mode: "all of" needs every chosen tag, "any of" needs one', () => {
     const tagged: Graph = {
       ...graph,
       nodes: graph.nodes.map((n) =>
-        n.id === 'b'
-          ? { ...n, tags: [{ id: 'assign-1', category: 'Interests', label: 'Jazz', isSelfTag: false, isMine: true, kind: 'CUSTOM' as const, tagId: 'jazz', parentId: 'music', level: 2, icon: null, fullPath: 'Interests › Jazz' }] }
-          : n
+        n.id === 'a' ? { ...n, tags: [{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }] }
+        : n.id === 'b' ? { ...n, tags: [{ id: 'x', label: 'X' }] }
+        : n
       ),
     };
-
-    const hits = searchGraphNodes(tagged, 'tags', '', { tagIds: ['music'], labels: [], matchAll: true }, index);
-    expect(hits.map((n) => n.id)).toEqual(['b']);
+    expect(searchGraphNodes(tagged, 'tags', '', { tagIds: ['x', 'y'], matchAll: true }).map((n) => n.id)).toEqual(['a']);
+    expect(searchGraphNodes(tagged, 'tags', '', { tagIds: ['x', 'y'], matchAll: false }).map((n) => n.id).sort()).toEqual(['a', 'b']);
   });
 });

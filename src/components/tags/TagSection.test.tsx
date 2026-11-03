@@ -1,65 +1,58 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TagSection } from './TagSection';
-import type { TagAssignment } from '../../services/tagService';
+import type { Tag } from '../../services/tagService';
 
 const api = vi.hoisted(() => ({
-  fetchTagsForUser: vi.fn(),
-  fetchAllTags: vi.fn(),
+  addTagToUser: vi.fn(),
   removeTagFromUser: vi.fn(),
+  fetchAllTags: vi.fn(),
+  peekAllTags: vi.fn(),
 }));
 vi.mock('../../services/tagService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/tagService')>()),
   ...api,
 }));
 
-const jazz: TagAssignment = {
-  id: 'assignment-1',
-  category: 'Personal Interests',
-  label: 'Jazz',
-  isSelfTag: true,
-  isMine: true,
-  kind: 'SELF',
-  tagId: 'jazz',
-  parentId: 'music',
-  level: 3,
-  icon: 'heart',
-  fullPath: 'Personal Interests › Music › Jazz',
-};
+const jazz: Tag = { id: 'jazz', label: 'Jazz' };
+const chess: Tag = { id: 'chess', label: 'Chess' };
 
 beforeEach(() => {
-  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
-    matches: false,
-    media,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
-  api.fetchAllTags.mockResolvedValue([]);
-  api.fetchTagsForUser.mockResolvedValue([jazz]);
+  api.fetchAllTags.mockResolvedValue([jazz, chess]);
+  api.peekAllTags.mockReturnValue([jazz, chess]);
   api.removeTagFromUser.mockResolvedValue(undefined);
+  api.addTagToUser.mockResolvedValue([jazz, chess]);
 });
 
 afterEach(() => vi.clearAllMocks());
 
 describe('TagSection', () => {
-  it('shows tags loaded with the directory without requesting them', () => {
-    render(<TagSection subjectId="u1" isCurrentUser tags={[jazz]} onTagsChange={vi.fn()} />);
-
+  it('shows the person’s tags', () => {
+    render(<TagSection subjectId="p1" tags={[jazz]} onTagsChange={vi.fn()} />);
     expect(screen.getByText('Jazz')).toBeInTheDocument();
-    expect(api.fetchTagsForUser).not.toHaveBeenCalled();
   });
 
-
-  it('hands edits back to the directory as functional updates', async () => {
+  it('removes a tag and reports the new list', async () => {
     const onTagsChange = vi.fn();
-    render(<TagSection subjectId="u1" isCurrentUser tags={[jazz]} onTagsChange={onTagsChange} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Add tags/ }));
+    render(<TagSection subjectId="p1" tags={[jazz]} onTagsChange={onTagsChange} />);
     fireEvent.click(screen.getByRole('button', { name: 'Remove Jazz' }));
-
     await waitFor(() => expect(onTagsChange).toHaveBeenCalledTimes(1));
-    const update = onTagsChange.mock.calls[0][0];
-    expect(update([jazz])).toEqual([]);
-    expect(api.fetchTagsForUser).not.toHaveBeenCalled();
+    expect(api.removeTagFromUser).toHaveBeenCalledWith('p1', 'jazz');
+    expect(onTagsChange.mock.calls[0][0]([jazz])).toEqual([]);
+  });
+
+  it('suggests existing tags the person does not have yet, and applies one by id', async () => {
+    const onTagsChange = vi.fn();
+    render(<TagSection subjectId="p1" tags={[jazz]} onTagsChange={onTagsChange} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a tag' }), { target: { value: 'ch' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Chess' }));
+    await waitFor(() => expect(api.addTagToUser).toHaveBeenCalledWith('p1', { tagId: 'chess' }));
+  });
+
+  it('offers to create a new tag when the typed name is not in the list', async () => {
+    render(<TagSection subjectId="p1" tags={[]} onTagsChange={vi.fn()} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a tag' }), { target: { value: 'Pottery' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Create “Pottery”/ }));
+    await waitFor(() => expect(api.addTagToUser).toHaveBeenCalledWith('p1', { label: 'Pottery' }));
   });
 });

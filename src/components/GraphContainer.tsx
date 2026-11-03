@@ -25,7 +25,6 @@ import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, CloseIcon, SelectIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField, type TagQueryFieldHandle } from './tags/TagQueryField';
-import { pickerRows } from './tags/tagTheme';
 
 const ZOOM_STEP_FACTOR = 1.6;
 const LINK_MODE_BACKGROUND = '#0d2236';
@@ -188,8 +187,6 @@ export const GraphContainer = () => {
               criteria={c.tagCriteria}
               onChange={c.setTagCriteria}
               matchCount={c.tagMatchIds ? c.tagMatchIds.size : null}
-              loading={false}
-              rows={pickerRows('regular', false)}
               layout="dropdown"
               placeholder={GRAPH_SEARCH_PLACEHOLDERS.tags}
               inputStyle={{ fontSize: '14px' }}
