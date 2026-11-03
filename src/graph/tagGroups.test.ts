@@ -80,3 +80,36 @@ describe('convexHull', () => {
     expect(convexHull([[0, 0], [3, 4]])).toHaveLength(2);
   });
 });
+
+describe('group separation', () => {
+  const grouped = (id: string, tagIds: string[], x: number, y: number) => ({ id, tagIds, x, y, vx: 0, vy: 0 });
+
+  it('pushes two groups with nobody in common apart when their areas overlap', () => {
+    // A is centred at 0, B at 15 to the right: close enough that their areas overlap.
+    const nodes = [
+      grouped('a1', ['A'], -10, 0),
+      grouped('a2', ['A'], 10, 0),
+      grouped('b1', ['B'], 5, -10),
+      grouped('b2', ['B'], 25, 10),
+    ];
+    const force = tagGroupForce();
+    force.initialize(nodes);
+    force(1);
+    // Pulls cancel within each group, so the net sideways velocity is the push: A moves left, B right.
+    const sumA = nodes.slice(0, 2).reduce((s, n) => s + n.vx, 0);
+    const sumB = nodes.slice(2).reduce((s, n) => s + n.vx, 0);
+    expect(sumA).toBeLessThan(0);
+    expect(sumB).toBeGreaterThan(0);
+  });
+
+  it('leaves two groups alone when they share a person', () => {
+    const shared = grouped('s', ['A', 'B'], 0, 0);
+    const nodes = [grouped('a1', ['A'], -10, 0), shared, grouped('b1', ['B'], 10, 0)];
+    const force = tagGroupForce();
+    force.initialize(nodes);
+    force(1);
+    // The only forces are the pulls toward each group's centre, which don't push groups apart.
+    expect(nodes[0].vx).toBeGreaterThan(0);
+    expect(nodes[2].vx).toBeLessThan(0);
+  });
+});

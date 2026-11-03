@@ -17,6 +17,9 @@ export interface ForceGraphNode {
   /** Current position, written by the simulation. Absent until it has placed the node. */
   x?: number;
   y?: number;
+  /** Set for the centre (you): pins it at the origin so the graph stays tethered to it. */
+  fx?: number;
+  fy?: number;
 }
 
 export interface ForceGraphLink {
@@ -101,7 +104,12 @@ export const graphToForceGraphData = (graph: Graph, previous?: ForceGraphData): 
         tagIds: effective.get(n.id) ?? [],
         val: n.kind === 'SELF' ? NODE_VAL_SELF : NODE_VAL_DEFAULT,
       };
-      if (old?.x != null && old.y != null) {
+      if (n.kind === 'SELF') {
+        node.fx = 0;
+        node.fy = 0;
+        node.x = 0;
+        node.y = 0;
+      } else if (old?.x != null && old.y != null) {
         node.x = old.x;
         node.y = old.y;
       }

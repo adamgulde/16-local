@@ -35,6 +35,11 @@ const CHARGE = -60;
 // Pull toward the centre of a group of people with identical tags. Strong enough to bunch them up, weak
 // enough that charge and links still win where a person's other tags pull them elsewhere.
 export const GROUP_STRENGTH = 0.35;
+// Groups with no person in common are pushed apart, so their areas don't overlap. Groups that share a
+// person are left alone: they're meant to overlap there. GROUP_GAP is the clear space kept between them.
+const SEPARATION_STRENGTH = 0.25;
+const GROUP_GAP = 30;
+const GROUP_MARGIN = 20;
 
 // Link length from your relationship strength (1–5): a strong contact sits close to you, a distant
 // one further out. Links between two of your contacts (LINK) use a fixed, medium length.
@@ -83,6 +88,8 @@ export const tagGroupForce = () => {
         members.set(id, list);
       }
     }
+
+    const groups: { list: GroupNode[]; set: Set<GroupNode>; cx: number; cy: number; r: number }[] = [];
     for (const list of members.values()) {
       if (list.length < 2) continue;
       let cx = 0;
@@ -93,9 +100,38 @@ export const tagGroupForce = () => {
       }
       cx /= list.length;
       cy /= list.length;
+      // Pull each member toward the centre of their group.
       for (const m of list) {
         m.vx = (m.vx ?? 0) + (cx - m.x!) * GROUP_STRENGTH * alpha;
         m.vy = (m.vy ?? 0) + (cy - m.y!) * GROUP_STRENGTH * alpha;
+      }
+      let r = 0;
+      for (const m of list) r = Math.max(r, Math.hypot(m.x! - cx, m.y! - cy));
+      groups.push({ list, set: new Set(list), cx, cy, r: r + GROUP_MARGIN });
+    }
+
+    // Keep groups that share nobody apart, by moving each group as a whole.
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        const a = groups[i];
+        const b = groups[j];
+        if (a.list.some((m) => b.set.has(m))) continue;
+        const dx = b.cx - a.cx;
+        const dy = b.cy - a.cy;
+        const d = Math.hypot(dx, dy) || 0.01;
+        const minDist = a.r + b.r + GROUP_GAP;
+        if (d >= minDist) continue;
+        const push = (minDist - d) * SEPARATION_STRENGTH * alpha;
+        const ux = dx / d;
+        const uy = dy / d;
+        for (const m of a.list) {
+          m.vx = (m.vx ?? 0) - ux * push;
+          m.vy = (m.vy ?? 0) - uy * push;
+        }
+        for (const m of b.list) {
+          m.vx = (m.vx ?? 0) + ux * push;
+          m.vy = (m.vy ?? 0) + uy * push;
+        }
       }
     }
   };
@@ -189,7 +225,8 @@ export const useGraphPhysics = (
   // receiving new graphData, and the forces must be in place before that or the static layout
   // is computed with d3's defaults.
   useLayoutEffect(() => {
-    fgRef.current?.d3Force('charge')?.strength(CHARGE);
+    // The centre (you) doesn't repel anyone. Everyone else repels as before.
+    fgRef.current?.d3Force('charge')?.strength((n: GNode) => (n.kind === 'SELF' ? 0 : CHARGE));
 
     const degree = new Map<string, number>();
     links.forEach((l) => {
