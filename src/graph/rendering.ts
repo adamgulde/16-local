@@ -1,6 +1,6 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-graph-2d';
-import type { ForceGraphLink, ForceGraphNode } from './mapping';
+import type { ForceGraphData, ForceGraphLink, ForceGraphNode } from './mapping';
 import { STRENGTH_MAX, STRENGTH_MIN } from '../data/types';
 
 // The extra properties LinkObject merges alongside the resolved source/target node refs.
@@ -27,6 +27,10 @@ export const colorForNode = (node: Pick<ForceGraphNode, 'kind'>): string =>
 
 const CHARGE = -60;
 
+// Pull toward the centre of a group of people with identical tags. Strong enough to bunch them up, weak
+// enough that charge and links still win where a person's other tags pull them elsewhere.
+export const GROUP_STRENGTH = 0.35;
+
 // Link length from your relationship strength (1–5): a strong contact sits close to you, a distant
 // one further out. Links between two of your contacts (LINK) use a fixed, medium length.
 const DIRECT_DISTANCE_FAR = 90; // closeness 1 (distant)
@@ -48,11 +52,61 @@ export const linkDistanceFor = (link: GLink): number => {
 // engine right after, so the graph first appears already at rest. Spread into ForceGraph2D.
 export const STATIC_LAYOUT = { warmupTicks: 300, cooldownTicks: 0 } as const;
 
-/** Wires the charge and link forces, identical for every renderer. */
+interface GroupNode {
+  id: string;
+  tagKey: string;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+/**
+ * Attracts people with identical tag sets toward their shared centre. Works per tick: each group's
+ * centroid is recomputed, so the pull follows people as they move.
+ */
+export const tagGroupForce = () => {
+  let nodes: GroupNode[] = [];
+  const force = (alpha: number) => {
+    const groups = new Map<string, GroupNode[]>();
+    for (const n of nodes) {
+      if (!n.tagKey || n.x == null || n.y == null) continue;
+      const list = groups.get(n.tagKey) ?? [];
+      list.push(n);
+      groups.set(n.tagKey, list);
+    }
+    for (const members of groups.values()) {
+      if (members.length < 2) continue;
+      let cx = 0;
+      let cy = 0;
+      for (const m of members) {
+        cx += m.x!;
+        cy += m.y!;
+      }
+      cx /= members.length;
+      cy /= members.length;
+      for (const m of members) {
+        m.vx = (m.vx ?? 0) + (cx - m.x!) * GROUP_STRENGTH * alpha;
+        m.vy = (m.vy ?? 0) + (cy - m.y!) * GROUP_STRENGTH * alpha;
+      }
+    }
+  };
+  force.initialize = (n: GroupNode[]) => {
+    nodes = n;
+  };
+  return force;
+};
+
+/**
+ * Wires the physics for every renderer: charge, link lengths (closeness), and tag groups. Whenever the
+ * graph changes, the simulation is restarted from where people are now, so edits move the layout.
+ */
 export const useGraphPhysics = (
   fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
-  links: DisplayLink[]
+  data: ForceGraphData,
+  ready: boolean
 ) => {
+  const links = data.links;
   // A layout effect, not a passive one: force-graph runs its warmup in a debounced digest after
   // receiving new graphData, and the forces must be in place before that or the static layout
   // is computed with d3's defaults.
@@ -73,7 +127,13 @@ export const useGraphPhysics = (
         const t = degree.get(nodeRefId(link.target as string | GNode)) ?? 1;
         return 1 / Math.min(s, t);
       });
-  }, [links, fgRef]);
+
+    fgRef.current?.d3Force('tagGroups', tagGroupForce());
+
+    // Once the first layout has settled, restart the simulation so this change animates from the
+    // current positions instead of waiting for the next interaction.
+    if (ready) fgRef.current?.d3ReheatSimulation();
+  }, [data, ready, fgRef]);
 };
 
 export const drawGrid = (ctx: CanvasRenderingContext2D, globalScale: number) => {

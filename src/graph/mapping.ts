@@ -9,6 +9,8 @@ export interface ForceGraphNode {
   phoneNumber: string | null;
   editable: boolean;
   strength: Strength;
+  /** Identifies people with identical tag sets (sorted tag ids joined). Empty when untagged. */
+  tagKey: string;
   val: number;
 }
 
@@ -29,6 +31,10 @@ export const contactFullName = (n: Pick<GraphNode, 'firstName' | 'lastName'>): s
 const NODE_VAL_SELF = 8;
 const NODE_VAL_DEFAULT = 5;
 
+/** Same tags, same key: two people with exactly the same tags get the same key. */
+export const tagKeyFor = (tags: { id: string }[]): string =>
+  tags.map((t) => t.id).sort().join('|');
+
 /**
  * Builds the force-graph data for a graph. Pass the previous data so people who are still here keep
  * their positions: the layout then moves from where it was instead of starting again.
@@ -45,6 +51,7 @@ export const graphToForceGraphData = (graph: Graph, previous?: ForceGraphData): 
         phoneNumber: n.phoneNumber,
         editable: n.editable,
         strength: n.strength,
+        tagKey: tagKeyFor(n.tags),
         val: n.kind === 'SELF' ? NODE_VAL_SELF : NODE_VAL_DEFAULT,
       };
       if (old?.x != null && old.y != null) {

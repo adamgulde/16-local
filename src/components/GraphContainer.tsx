@@ -28,7 +28,9 @@ import { TagQueryField, type TagQueryFieldHandle } from './tags/TagQueryField';
 
 const ZOOM_STEP_FACTOR = 1.6;
 const LINK_MODE_BACKGROUND = '#0d2236';
-const ANIMATED_LAYOUT = { warmupTicks: 0 } as const;
+// cooldownTicks must be set explicitly: when the static layout's cooldownTicks: 0 is dropped from the
+// props, the library keeps the last value, which would stop every later update after one tick.
+const ANIMATED_LAYOUT = { warmupTicks: 0, cooldownTicks: Infinity } as const;
 
 const floatingPanelStyle: CSSProperties = {
   background: 'rgba(28, 28, 30, 0.94)',
@@ -95,7 +97,7 @@ export const GraphContainer = () => {
     graphResizeObserverRef.current = observer;
   }, []);
 
-  useGraphPhysics(fgRef, c.forceGraphData.links);
+  useGraphPhysics(fgRef, c.forceGraphData, graphReady);
 
   if (c.isLoading) {
     return (

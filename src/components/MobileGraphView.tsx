@@ -30,7 +30,9 @@ type Sheet = 'card' | 'path' | 'settings' | 'search' | 'addPerson' | 'help' | nu
 
 const ZOOM_STEP_FACTOR = 1.6;
 const LINK_MODE_BACKGROUND = '#0d2236';
-const ANIMATED_LAYOUT = { warmupTicks: 0 } as const;
+// cooldownTicks must be set explicitly: when the static layout's cooldownTicks: 0 is dropped from the
+// props, the library keeps the last value, which would stop every later update after one tick.
+const ANIMATED_LAYOUT = { warmupTicks: 0, cooldownTicks: Infinity } as const;
 
 // Corner floating circular glass buttons with 44px minimum touch targets
 const cornerButtonStyle: CSSProperties = {
@@ -100,7 +102,7 @@ export const MobileGraphView = () => {
     resizeObserverRef.current = observer;
   }, []);
 
-  useGraphPhysics(fgRef, c.forceGraphData.links);
+  useGraphPhysics(fgRef, c.forceGraphData, graphReady);
 
   const [activeSheet, setActiveSheet] = useState<Sheet>(null);
 
