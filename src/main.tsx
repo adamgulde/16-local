@@ -5,6 +5,10 @@ import { StatusBar, Style } from '@capacitor/status-bar'
 import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { startFreezeLog } from './debug/freezeLog'
+import { FreezeLogView } from './debug/FreezeLogView'
+
+startFreezeLog()
 
 if (Capacitor.isNativePlatform()) {
   document.documentElement.classList.add('native');
@@ -41,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
+    <FreezeLogView />
   </StrictMode>,
 )
 
