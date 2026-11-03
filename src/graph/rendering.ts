@@ -15,8 +15,8 @@ export const nodeRefId = (ref: string | number | GNode | undefined): string => {
   return typeof ref === 'object' ? String(ref.id) : String(ref);
 };
 
-// Below this globalScale (zoomed out far enough that labels are unreadable clutter anyway), node
-// labels are skipped — text shaping is the real bottleneck once 100+ nodes are on screen.
+// Below this globalScale (zoomed out far), person names are hidden: they'd be unreadable clutter. Tag
+// group names are not affected and stay visible at every zoom.
 export const LABEL_VISIBILITY_SCALE = 0.6;
 
 export const SELF_COLOR = '#3d8bff';
@@ -298,7 +298,7 @@ export const drawNode = (
   }
 
   // Skip labels if dimmed, or once zoomed out far enough that they'd be unreadable clutter
-  if (!dimmed && (isHighlighted || globalScale > LABEL_VISIBILITY_SCALE)) {
+  if (!dimmed && globalScale > LABEL_VISIBILITY_SCALE) {
     const fontSize = 10 / globalScale;
     ctx.font = `${fontSize}px Sans-Serif`;
     ctx.textAlign = 'center';
