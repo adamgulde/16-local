@@ -17,6 +17,8 @@ interface AddPersonFormProps {
   onImportContacts?: (entries: CreateContactPayload[], onProgress: (done: number) => void) => Promise<ImportContactsResult>;
   // The current graph, so the importer can mark who's already added.
   nodes?: GraphNode[];
+  /** Set to false when the form sits in a sheet that already has a close button. */
+  showClose?: boolean;
 }
 
 const inputStyle: CSSProperties = {
@@ -41,6 +43,7 @@ export const AddPersonForm = ({
   style,
   onImportContacts,
   nodes = [],
+  showClose = true,
 }: AddPersonFormProps) => {
   const [mode, setMode] = useState<'manual' | 'import'>('manual');
   const [firstName, setFirstName] = useState('');
@@ -71,9 +74,11 @@ export const AddPersonForm = ({
     <div style={{ padding: compact ? '12px' : '16px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px', ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <h2 style={{ margin: 0, fontSize: compact ? '16px' : '18px' }}>{mode === 'import' ? 'Import Contacts' : 'Add Person'}</h2>
-        <button onClick={onClose} aria-label="Close" style={{ minWidth: 40, minHeight: 40, background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer' }}>
-          <CloseIcon size={18} />
-        </button>
+        {showClose && (
+          <button onClick={onClose} aria-label="Close" style={{ minWidth: 40, minHeight: 40, background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer' }}>
+            <CloseIcon size={18} />
+          </button>
+        )}
       </div>
       {mode === 'import' && onImportContacts ? (
         <ImportContactsPanel nodes={nodes} onImport={onImportContacts} onBack={() => setMode('manual')} onDone={onClose} />

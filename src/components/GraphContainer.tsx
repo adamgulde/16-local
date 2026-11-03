@@ -8,7 +8,6 @@ import {
   drawNode,
   drawPathArrow,
   linkColorFor,
-  linkLineDashFor,
   paintNodePointerArea,
   useGraphPhysics,
   STATIC_LAYOUT,
@@ -154,7 +153,6 @@ export const GraphContainer = () => {
               filterNodes: c.tagMatchIds,
             })
           }
-          linkLineDash={(link) => linkLineDashFor(link as GLink)}
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
           linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}

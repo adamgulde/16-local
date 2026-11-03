@@ -8,7 +8,6 @@ import {
   drawNode,
   drawPathArrow,
   linkColorFor,
-  linkLineDashFor,
   paintNodePointerArea,
   useGraphPhysics,
   STATIC_LAYOUT,
@@ -203,7 +202,6 @@ export const MobileGraphView = () => {
               filterNodes: c.tagMatchIds,
             })
           }
-          linkLineDash={(link) => linkLineDashFor(link as GLink)}
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
           linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}
@@ -412,6 +410,7 @@ export const MobileGraphView = () => {
         <AddPersonForm
           onImportContacts={c.handleImportContacts}
           nodes={c.graph.nodes}
+          showClose={false}
           compact
           onSubmit={(payload) => {
             c.handleCreateContact(payload);

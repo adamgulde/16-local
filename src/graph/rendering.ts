@@ -274,7 +274,6 @@ export const linkColorFor = (
   return `rgba(200, 210, 220, ${dimmed ? 0.08 : 0.8})`;
 };
 
-export const linkLineDashFor = (link: GLink): number[] | null => (link.kind === 'DIRECT' ? null : [4, 4]);
 
 // Drawn 'after' the default line, only for links on the currently-open path. The link's
 // source/target order is arbitrary, so pathLinkTarget records the true forward node per hop and
