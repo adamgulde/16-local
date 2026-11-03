@@ -447,7 +447,7 @@ export const MobileGraphView = () => {
             onCloseness={c.handleBulkCloseness}
             onAddTag={c.handleBulkAddTag}
             onDelete={c.handleBulkDelete}
-            onClear={c.clearMulti}
+            onClose={c.toggleSelectMode}
             busy={c.isActionPending('bulk-closeness') || c.isActionPending('bulk-delete') || c.isActionPending('bulk-tag')}
             compact
           />

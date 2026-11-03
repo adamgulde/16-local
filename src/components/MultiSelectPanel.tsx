@@ -12,7 +12,8 @@ interface MultiSelectPanelProps {
   onCloseness: (value: number) => void;
   onAddTag: (payload: AddTagPayload) => void;
   onDelete: () => void;
-  onClear: () => void;
+  /** Closes the panel: leaves select mode and clears the selection. */
+  onClose: () => void;
   busy?: boolean;
   compact?: boolean;
 }
@@ -23,7 +24,7 @@ const sectionTitle: CSSProperties = { margin: '10px 0 6px', fontSize: 11, fontWe
  * What you can do to several people at once, using the same rules as a single contact card. Notes and
  * bios stay per person, so they aren't offered here.
  */
-export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, onClear, busy = false, compact = false }: MultiSelectPanelProps) => {
+export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, onClose, busy = false, compact = false }: MultiSelectPanelProps) => {
   const [dictionary, setDictionary] = useState<Tag[]>([]);
   const [tagQuery, setTagQuery] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -65,7 +66,7 @@ export const MultiSelectPanel = ({ selected, onCloseness, onAddTag, onDelete, on
             {names.length ? names.join(', ') : 'Tap people on the graph to add them.'}
           </div>
         </div>
-        <button type="button" onClick={onClear} aria-label="Clear selection" style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 4, minWidth: 40, minHeight: 40 }}>
+        <button type="button" onClick={onClose} aria-label="Close selection" style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 4, minWidth: 40, minHeight: 40 }}>
           <CloseIcon size={16} />
         </button>
       </div>
