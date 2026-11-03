@@ -54,7 +54,7 @@ export const STATIC_LAYOUT = { warmupTicks: 300, cooldownTicks: 0 } as const;
 
 interface GroupNode {
   id: string;
-  tagKey: string;
+  tagIds: string[];
   x?: number;
   y?: number;
   vx?: number;
@@ -62,30 +62,33 @@ interface GroupNode {
 }
 
 /**
- * Attracts people with identical tag sets toward their shared centre. Works per tick: each group's
- * centroid is recomputed, so the pull follows people as they move.
+ * Pulls everyone who shares a tag toward that tag's centre. Each tag's centroid is recomputed every
+ * tick, so the pull follows people as they move. A person's pulls are limited upstream (see
+ * tagGroupsOf), so this only sees the tags they're grouped by.
  */
 export const tagGroupForce = () => {
   let nodes: GroupNode[] = [];
   const force = (alpha: number) => {
-    const groups = new Map<string, GroupNode[]>();
+    const members = new Map<string, GroupNode[]>();
     for (const n of nodes) {
-      if (!n.tagKey || n.x == null || n.y == null) continue;
-      const list = groups.get(n.tagKey) ?? [];
-      list.push(n);
-      groups.set(n.tagKey, list);
+      if (n.x == null || n.y == null) continue;
+      for (const id of n.tagIds ?? []) {
+        const list = members.get(id) ?? [];
+        list.push(n);
+        members.set(id, list);
+      }
     }
-    for (const members of groups.values()) {
-      if (members.length < 2) continue;
+    for (const list of members.values()) {
+      if (list.length < 2) continue;
       let cx = 0;
       let cy = 0;
-      for (const m of members) {
+      for (const m of list) {
         cx += m.x!;
         cy += m.y!;
       }
-      cx /= members.length;
-      cy /= members.length;
-      for (const m of members) {
+      cx /= list.length;
+      cy /= list.length;
+      for (const m of list) {
         m.vx = (m.vx ?? 0) + (cx - m.x!) * GROUP_STRENGTH * alpha;
         m.vy = (m.vy ?? 0) + (cy - m.y!) * GROUP_STRENGTH * alpha;
       }
@@ -95,6 +98,71 @@ export const tagGroupForce = () => {
     nodes = n;
   };
   return force;
+};
+
+type Point = [number, number];
+
+/** Convex hull (Andrew's monotone chain), counter-clockwise. Two points give the segment between them. */
+export const convexHull = (points: Point[]): Point[] => {
+  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length <= 2) return pts;
+  const cross = (o: Point, a: Point, b: Point) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: Point[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Point[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+};
+
+const GROUP_PALETTE = ['#f5a524', '#22c55e', '#a855f7', '#38bdf8', '#f43f5e', '#eab308', '#14b8a6', '#fb7185', '#60a5fa', '#c084fc'];
+
+/**
+ * Draws one soft polygon behind each tag group, around everyone who carries that tag, with the tag
+ * name above it. Drawn before nodes and links, in graph coordinates.
+ */
+export const drawTagPolygons = (ctx: CanvasRenderingContext2D, globalScale: number, data: ForceGraphData) => {
+  data.groups.forEach((group, gi) => {
+    const points: Point[] = [];
+    for (const n of data.nodes) {
+      if (n.x != null && n.y != null && n.tagIds.includes(group.id)) points.push([n.x, n.y]);
+    }
+    if (points.length < 2) return;
+
+    const hull = convexHull(points);
+    const pad = 24 / globalScale; // a constant on-screen margin around the people
+    const color = GROUP_PALETTE[gi % GROUP_PALETTE.length];
+
+    ctx.save();
+    ctx.beginPath();
+    hull.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = color;
+    ctx.fill();
+    // A wide, round-joined stroke of the same outline gives the margin around the people.
+    ctx.globalAlpha = 0.1;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = pad * 2;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+
+    const top = Math.min(...hull.map((p) => p[1]));
+    const cx = hull.reduce((sum, p) => sum + p[0], 0) / hull.length;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = color;
+    ctx.font = `${12 / globalScale}px Sans-Serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(group.label, cx, top - pad - 2 / globalScale);
+    ctx.restore();
+  });
 };
 
 /**

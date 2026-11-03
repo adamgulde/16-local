@@ -5,6 +5,7 @@ import { contactFullName } from '../graph/mapping';
 import { GRAPH_SEARCH_MODES, GRAPH_SEARCH_PLACEHOLDERS } from '../graph/graphSearch';
 import {
   drawGrid,
+  drawTagPolygons,
   drawNode,
   drawPathArrow,
   linkColorFor,
@@ -138,7 +139,10 @@ export const GraphContainer = () => {
           {...(graphReady ? ANIMATED_LAYOUT : STATIC_LAYOUT)}
           d3VelocityDecay={0.4}
           onEngineStop={handleEngineStop}
-          onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
+          onRenderFramePre={(ctx, globalScale) => {
+            drawGrid(ctx, globalScale);
+            drawTagPolygons(ctx, globalScale, c.forceGraphData);
+          }}
           nodeCanvasObject={(node, ctx, globalScale) =>
             drawNode(node, ctx, globalScale, {
               highlightNodes: c.highlightNodes,
