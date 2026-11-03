@@ -3,7 +3,7 @@
 import type { Db } from './db';
 import { getTagsByContact } from './tags';
 import type { ContactRow } from './contacts';
-import type { Graph, GraphEdge, GraphNode } from './types';
+import { STRENGTH_MAX, type Graph, type GraphEdge, type GraphNode } from './types';
 
 export const SELF_ID = 'self';
 
@@ -27,7 +27,8 @@ export const buildGraph = async (d: Db): Promise<Graph> => {
       phoneNumber: null,
       tags: [],
       note: '',
-      strength: 5,
+      strength: STRENGTH_MAX,
+      knownPersonally: true,
       editable: true,
     },
     ...contacts.map<GraphNode>((c) => ({
@@ -39,12 +40,16 @@ export const buildGraph = async (d: Db): Promise<Graph> => {
       phoneNumber: c.phone_number,
       tags: tagsByContact.get(c.id) ?? [],
       note: c.note,
-      strength: c.strength as GraphNode['strength'],
+      strength: c.strength,
+      knownPersonally: c.known_personally === 1,
       editable: true,
     })),
   ];
 
-  const edges: GraphEdge[] = contacts.map((c) => ({ source: SELF_ID, target: c.id, kind: 'DIRECT' }));
+  // Only people you know get a direct edge from you.
+  const edges: GraphEdge[] = contacts
+    .filter((c) => c.known_personally === 1)
+    .map((c) => ({ source: SELF_ID, target: c.id, kind: 'DIRECT' }));
   for (const l of links) {
     edges.push({ source: l.contact_a_id, target: l.contact_b_id, kind: 'LINK' });
   }

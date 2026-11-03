@@ -228,3 +228,11 @@ export const UsersIcon = ({ size = 16, color = 'currentColor', ...props }: IconP
     <path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 );
+
+// Select: a dotted marquee around a node, for group selection.
+export const SelectIcon = ({ size = 20, color = 'currentColor', ...props }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 3" />
+    <circle cx="12" cy="12" r="2.5" fill={color} stroke="none" />
+  </svg>
+);

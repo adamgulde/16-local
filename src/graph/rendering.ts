@@ -1,6 +1,7 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-graph-2d';
 import type { ForceGraphLink, ForceGraphNode } from './mapping';
+import { STRENGTH_MAX, STRENGTH_MIN } from '../data/types';
 
 // The extra properties LinkObject merges alongside the resolved source/target node refs.
 export type LinkExtra = Pick<ForceGraphLink, 'kind'>;
@@ -28,8 +29,8 @@ const CHARGE = -60;
 
 // Link length from your relationship strength (1–5): a strong contact sits close to you, a distant
 // one further out. Links between two of your contacts (LINK) use a fixed, medium length.
-const DIRECT_DISTANCE_MAX = 90; // strength 1
-const DIRECT_DISTANCE_STEP = 15; // each strength point shortens the link by this much
+const DIRECT_DISTANCE_FAR = 90; // closeness 1 (distant)
+const DIRECT_DISTANCE_NEAR = 15; // closeness 10 (inner circle)
 const LINK_EDGE_DISTANCE = 45;
 
 /** Target length for a link, in graph units. Exported for tests. */
@@ -37,8 +38,9 @@ export const linkDistanceFor = (link: GLink): number => {
   if (link.kind !== 'DIRECT') return LINK_EDGE_DISTANCE;
   // DIRECT links run from you (SELF) to a contact; the contact is the non-SELF end.
   const target = typeof link.target === 'object' ? (link.target as GNode) : null;
-  const strength = target?.strength ?? 3;
-  return DIRECT_DISTANCE_MAX - (strength - 1) * DIRECT_DISTANCE_STEP;
+  const strength = Math.min(STRENGTH_MAX, Math.max(STRENGTH_MIN, target?.strength ?? 5.5));
+  const t = (strength - STRENGTH_MIN) / (STRENGTH_MAX - STRENGTH_MIN);
+  return DIRECT_DISTANCE_FAR - t * (DIRECT_DISTANCE_FAR - DIRECT_DISTANCE_NEAR);
 };
 
 // The layout is computed synchronously before the first frame is drawn and never animates:
@@ -129,15 +131,17 @@ interface NodeCanvasOptions {
   highlightNodes: Set<string>;
   activePath: string[] | null;
   filterNodes?: Set<string> | null;
+  /** Nodes picked in multi-select; drawn with a ring. */
+  selectedIds?: ReadonlySet<string> | null;
 }
 
-/** Node draw logic shared by every renderer: dimming, kind colour, zoom-scaled radius. SELF is a
- * solid blue dot, contacts are hollow dashed circles. */
+/** Node draw logic shared by every renderer: dimming, kind colour, zoom-scaled radius. Every node is
+ * a filled circle; multi-selected nodes get a white ring. */
 export const drawNode = (
   node: GNode,
   ctx: CanvasRenderingContext2D,
   globalScale: number,
-  { highlightNodes, activePath, filterNodes = null }: NodeCanvasOptions
+  { highlightNodes, activePath, filterNodes = null, selectedIds = null }: NodeCanvasOptions
 ) => {
   const idStr = String(node.id);
   const isHighlighted = highlightNodes.has(idStr);
@@ -150,15 +154,14 @@ export const drawNode = (
   ctx.beginPath();
   // Radius in screen pixels, not world units, so nodes keep a constant on-screen size at any zoom.
   ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-  if (node.kind === 'PLACEHOLDER') {
-    ctx.setLineDash([3 / globalScale, 2 / globalScale]);
-    ctx.lineWidth = 1.5 / globalScale;
-    ctx.strokeStyle = isHighlighted ? 'red' : nodeColor;
+  ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
+  ctx.fill();
+  if (selectedIds?.has(idStr)) {
+    ctx.beginPath();
+    ctx.arc(node.x!, node.y!, radius + 4 / globalScale, 0, 2 * Math.PI, false);
+    ctx.lineWidth = 2 / globalScale;
+    ctx.strokeStyle = '#ffffff';
     ctx.stroke();
-    ctx.setLineDash([]);
-  } else {
-    ctx.fillStyle = isHighlighted ? 'red' : nodeColor;
-    ctx.fill();
   }
 
   // Skip labels if dimmed, or once zoomed out far enough that they'd be unreadable clutter

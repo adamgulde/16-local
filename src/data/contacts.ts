@@ -5,7 +5,7 @@ import { cleanPhone, phoneKey } from './phone';
 import { newId, nowIso } from './ids';
 
 import { getTagsForContact } from './tags';
-import { DEFAULT_STRENGTH, isStrength, type ContactInput, type GraphNode, type ImportResult, type Strength } from './types';
+import { DEFAULT_STRENGTH, isStrength, STRENGTH_MAX, STRENGTH_MIN, type ContactInput, type GraphNode, type ImportResult, type Strength } from './types';
 
 export const MAX_NAME_LENGTH = 100;
 export const MAX_TEXT_LENGTH = 10_000;
@@ -20,6 +20,7 @@ export interface ContactRow {
   phone_number: string | null;
   note: string;
   strength: number;
+  known_personally: number;
   created_at: string;
   updated_at: string;
 }
@@ -33,7 +34,8 @@ const toNode = (row: ContactRow, tags: GraphNode['tags'] = []): GraphNode => ({
   phoneNumber: row.phone_number,
   tags,
   note: row.note,
-  strength: row.strength as Strength,
+  strength: row.strength,
+  knownPersonally: row.known_personally === 1,
   editable: true,
 });
 
@@ -61,7 +63,7 @@ const validateText = (text: string | null | undefined, label: string): string =>
 
 const validateStrength = (value: number | undefined): Strength => {
   if (value === undefined) return DEFAULT_STRENGTH;
-  if (!isStrength(value)) throw new DataError('Strength must be a whole number from 1 to 5');
+  if (!isStrength(value)) throw new DataError(`Closeness must be a number from ${STRENGTH_MIN} to ${STRENGTH_MAX}`);
   return value;
 };
 
@@ -88,12 +90,13 @@ export const createContact = async (d: Db, input: ContactInput): Promise<GraphNo
   const about = validateText(input.about, 'About');
   const phone = cleanPhone(input.phoneNumber);
   const strength = validateStrength(input.strength);
+  const known = input.knownPersonally === false ? 0 : 1;
   const now = nowIso();
   const id = newId();
   await d.run(
-    `INSERT INTO contacts (id, first_name, last_name, about, phone_number, note, strength, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)`,
-    [id, firstName, lastName, about, phone, strength, now, now]
+    `INSERT INTO contacts (id, first_name, last_name, about, phone_number, note, strength, known_personally, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
+    [id, firstName, lastName, about, phone, strength, known, now, now]
   );
   return contactNode(d, id);
 };
@@ -218,8 +221,8 @@ export const importContacts = async (
       const id = newId();
       ids.push(id);
       await tx.run(
-        `INSERT INTO contacts (id, first_name, last_name, about, phone_number, note, strength, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)`,
+        `INSERT INTO contacts (id, first_name, last_name, about, phone_number, note, strength, known_personally, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, '', ?, 1, ?, ?)`,
         [id, c.first, c.last, c.about, c.phone, DEFAULT_STRENGTH, now, now]
       );
     }

@@ -47,6 +47,7 @@ export const AddPersonForm = ({
   const [lastName, setLastName] = useState('');
   const [about, setAbout] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [unknown, setUnknown] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -62,6 +63,7 @@ export const AddPersonForm = ({
       lastName: lastName.trim() || undefined,
       about: about.trim() || undefined,
       phoneNumber: phoneNumber.trim() || undefined,
+      knownPersonally: !unknown,
     });
   };
 
@@ -98,8 +100,7 @@ export const AddPersonForm = ({
         </button>
       )}
       <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#9a9a9a' }}>
-        A private placeholder on your own graph — no account needed. You can link them to a real
-        account later if a share request connects you.
+        A private contact on your own graph. Nobody is notified.
       </p>
       <form onSubmit={handleSubmit}>
         <label style={{ ...sectionHeaderStyle, fontSize: '12px' }}>First name</label>
@@ -121,6 +122,15 @@ export const AddPersonForm = ({
           placeholder="+1 ___-___-____ (optional)"
           style={inputStyle}
         />
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '0 0 12px', fontSize: 13, color: '#c0c0c6', cursor: 'pointer' }}>
+          <input type="checkbox" checked={unknown} onChange={(e) => setUnknown(e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            I don&apos;t know them personally
+            <span style={{ display: 'block', fontSize: 11, color: '#8e8e93' }}>
+              They won&apos;t be connected to you. After adding, you can connect them to someone you know.
+            </span>
+          </span>
+        </label>
         {error && <p style={{ color: '#ff6b6b', fontSize: '12px', margin: '0 0 8px' }}>{error}</p>}
         <button
           type="submit"

@@ -15,20 +15,26 @@ export const Instructions = () => (
         Tap Add person to type someone in, or import from your address book. Imports only add people you
         tick, and anyone already in your graph (same phone number or name) is skipped.
       </p>
+      <p style={{ ...textStyle, marginTop: 6 }}>
+        If you don&apos;t know someone personally, tick &quot;I don&apos;t know them personally&quot;. They won&apos;t
+        be connected to you, and you&apos;ll be asked whether to connect them to someone you know.
+      </p>
     </section>
 
     <section style={sectionStyle}>
       <h3 style={headingStyle}>Closeness</h3>
       <p style={textStyle}>
-        Each person has a closeness from 1 (distant) to 5 (inner circle). Closer people sit nearer you on
-        the graph. New people start at 3.
+        Each person has a closeness from 1 (distant) to 10 (inner circle), and you can enter decimals too.
+        Closer people sit nearer you on the graph. Distant, Acquaintance, Friend, Close and Inner circle
+        mark the usual points along the scale. New people start at Friend (5.5).
       </p>
     </section>
 
     <section style={sectionStyle}>
       <h3 style={headingStyle}>Links</h3>
       <p style={textStyle}>
-        Open a person and choose Link to… to connect two of your contacts who know each other.
+        Open a person and choose Link to…. The background turns blue: search the list, or tap people on the
+        graph to link or unlink them. Choose Done when you finish.
       </p>
     </section>
 
@@ -44,6 +50,14 @@ export const Instructions = () => (
       <h3 style={headingStyle}>Find a path</h3>
       <p style={textStyle}>
         Choose Find Path on a person to highlight the shortest chain of connections from you to them.
+      </p>
+    </section>
+
+    <section style={sectionStyle}>
+      <h3 style={headingStyle}>Select several people</h3>
+      <p style={textStyle}>
+        Choose Select, then tap people on the graph to build a group. You can then set closeness, add a tag,
+        or delete the whole group at once. Choose Done selecting to go back to single people.
       </p>
     </section>
 

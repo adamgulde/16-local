@@ -13,6 +13,8 @@ import {
   useGraphPhysics,
   STATIC_LAYOUT,
 } from '../graph/rendering';
+import { LinkPanel } from './LinkPanel';
+import { MultiSelectPanel } from './MultiSelectPanel';
 import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
 import { AddPersonForm } from './AddPersonForm';
@@ -20,12 +22,14 @@ import { DraggableCard } from './DraggableCard';
 import { Instructions } from './Instructions';
 import { APP_VERSION } from '../version';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
-import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, CloseIcon } from './Icons';
+import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, CloseIcon, SelectIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField, type TagQueryFieldHandle } from './tags/TagQueryField';
 import { pickerRows } from './tags/tagTheme';
 
 const ZOOM_STEP_FACTOR = 1.6;
+const LINK_MODE_BACKGROUND = '#0d2236';
+const ANIMATED_LAYOUT = { warmupTicks: 0 } as const;
 
 const floatingPanelStyle: CSSProperties = {
   background: 'rgba(28, 28, 30, 0.94)',
@@ -59,9 +63,11 @@ export const GraphContainer = () => {
   const hasOrientedRef = useRef(false);
   const tagQueryRef = useRef<TagQueryFieldHandle>(null);
   const [graphReady, setGraphReady] = useState(false);
+  // Link mode tints the background so it's obvious taps on the graph now link people.
+  const canvasBackground = c.linkFromId ? LINK_MODE_BACKGROUND : '#121214';
 
-  // The engine stops once the static layout is final. Only then is the camera placed (instantly) and
-  // the canvas revealed, so nothing moves when the graph appears.
+  // The first layout is computed up front and the camera is placed when it settles, so nothing moves
+  // when the graph appears. After that, edits animate: the simulation runs from where people are now.
   const handleEngineStop = () => {
     if (hasOrientedRef.current) return;
     hasOrientedRef.current = true;
@@ -112,11 +118,13 @@ export const GraphContainer = () => {
   }
 
   const selected = c.selectedNode;
+  const linkFrom = c.linkFromId ? c.nodesById.get(c.linkFromId) ?? null : null;
+  const selectedNodes = c.graph.nodes.filter((n) => c.multiIds.has(n.id));
   const selfName = c.selfProfile ? contactFullName(c.selfProfile) : '';
   const selfInitial = c.selfProfile?.firstName?.[0] ?? 'M';
 
   return (
-    <div ref={graphWrapperRef} style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#121214' }}>
+    <div ref={graphWrapperRef} style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: canvasBackground }}>
       {/* Full-viewport canvas, hidden until laid out and centred */}
       <div style={{ visibility: graphReady ? 'visible' : 'hidden' }}>
         <ForceGraph2D<GNode, GLink>
@@ -124,9 +132,9 @@ export const GraphContainer = () => {
           width={graphSize.width}
           height={graphSize.height}
           graphData={c.forceGraphData}
-          backgroundColor="#121214"
+          backgroundColor={canvasBackground}
           enableNodeDrag={false}
-          {...STATIC_LAYOUT}
+          {...(graphReady ? ANIMATED_LAYOUT : STATIC_LAYOUT)}
           d3VelocityDecay={0.4}
           onEngineStop={handleEngineStop}
           onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
@@ -135,6 +143,7 @@ export const GraphContainer = () => {
               highlightNodes: c.highlightNodes,
               activePath: c.activePath,
               filterNodes: c.tagMatchIds,
+              selectedIds: c.multiIds,
             })
           }
           linkColor={(link) =>
@@ -148,7 +157,7 @@ export const GraphContainer = () => {
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
           linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}
-          onNodeClick={(node) => c.selectNode(String(node.id))}
+          onNodeClick={(node) => c.handleNodeTap(String(node.id))}
           onBackgroundClick={() => {
             c.clearSelection();
             setShowSettings(false);
@@ -244,6 +253,16 @@ export const GraphContainer = () => {
         </div>
 
         <div style={{ flex: 1 }} />
+
+        {/* Select: tap people to build a group, then act on them together */}
+        <button
+          type="button"
+          onClick={c.toggleSelectMode}
+          aria-pressed={c.selectMode}
+          style={{ ...floatingPanelStyle, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, borderColor: c.selectMode ? '#3d8bff' : '#3a3a40', color: c.selectMode ? '#6ab0ff' : '#f0f0f0' }}
+        >
+          <SelectIcon size={14} /> {c.selectMode ? 'Done selecting' : 'Select'}
+        </button>
 
         {/* Add person */}
         <button
@@ -347,8 +366,37 @@ export const GraphContainer = () => {
         </DraggableCard>
       )}
 
+      {/* Link panel: search and link people to the chosen contact, or tap them on the graph */}
+      {linkFrom && (
+        <DraggableCard id="link-card" initialX={20} initialY={72} width={360} dragHandleText="Link (drag to move)" zIndex={35} onBringToFront={() => undefined}>
+          <LinkPanel
+            from={linkFrom}
+            contacts={c.ownContacts}
+            linkedIds={c.linkedIdsFor(linkFrom.id)}
+            onToggle={(id) => c.handleNodeTap(id)}
+            onDone={c.endLinking}
+            busy={c.isActionPending(linkFrom.id)}
+            heading={c.linkIsNewPerson ? `Connect ${contactFullName(linkFrom)} to someone else?` : undefined}
+          />
+        </DraggableCard>
+      )}
+
+      {/* Select panel: act on everyone selected */}
+      {c.selectMode && (
+        <DraggableCard id="multi-card" initialX={20} initialY={72} width={360} dragHandleText="Selection (drag to move)" zIndex={35} onBringToFront={() => undefined}>
+          <MultiSelectPanel
+            selected={selectedNodes}
+            onCloseness={c.handleBulkCloseness}
+            onAddTag={c.handleBulkAddTag}
+            onDelete={c.handleBulkDelete}
+            onClear={c.clearMulti}
+            busy={c.isActionPending('bulk-closeness') || c.isActionPending('bulk-delete') || c.isActionPending('bulk-tag')}
+          />
+        </DraggableCard>
+      )}
+
       {/* Selected contact card */}
-      {selected && (
+      {selected && !linkFrom && !c.selectMode && (
         <DraggableCard
           id="user-card"
           initialX={20}
@@ -360,14 +408,11 @@ export const GraphContainer = () => {
         >
           <ContactCard
             node={selected}
-            ownContacts={c.ownContacts}
-            linkedIds={c.linkedIdsFor(selected.id)}
             onClose={c.clearSelection}
             onUpdate={(payload) => c.handleUpdateContact(selected.id, payload)}
             onUpdateSelf={c.handleUpdateSelfProfile}
             onDelete={() => c.handleDeleteContact(selected.id)}
-            onLink={(otherId) => c.handleLinkContacts(selected.id, otherId)}
-            onUnlink={(otherId) => c.handleUnlinkContacts(selected.id, otherId)}
+            onStartLink={() => c.beginLinking(selected.id)}
             onTagsChange={(update) => c.updateContactTags(selected.id, update)}
             onNoteChange={(note) => c.updateContactNote(selected.id, note)}
             onSaveNote={c.saveContactNote}

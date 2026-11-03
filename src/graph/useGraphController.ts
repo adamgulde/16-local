@@ -12,11 +12,11 @@ import {
   type CreateContactPayload,
   type UpdateContactPayload,
 } from '../services/contactService';
-import { fetchAllTags, type TagsUpdate } from '../services/tagService';
+import { addTagToUser, fetchAllTags, type AddTagPayload, type TagAssignment, type TagsUpdate } from '../services/tagService';
 import { putContactNote } from '../services/contactService';
 import { buildTagIndex } from '../utils/tagTree';
 import { getSafeErrorMessage } from '../utils/errors';
-import { graphToForceGraphData, contactFullName } from './mapping';
+import { graphToForceGraphData, contactFullName, type ForceGraphData } from './mapping';
 import { EMPTY_TAG_CRITERIA, findPathBFS, searchGraphNodes, type GraphSearchMode, type TagCriteria } from './graphSearch';
 import type { GNode, GLink } from './rendering';
 
@@ -58,7 +58,14 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
 
   // Rebuilt only when the graph is (re)fetched or edited. Editing a contact's about/tags never hands
   // ForceGraph2D a new graphData, so the layout doesn't re-run.
-  const forceGraphData = useMemo(() => graphToForceGraphData(graph), [graph]);
+  // Each rebuild starts from the previous positions, so edits make the layout move rather than snap.
+  // The ref holds the last data handed to the graph; the simulation writes positions into it.
+  const lastForceData = useRef<ForceGraphData | null>(null);
+  // eslint-disable-next-line react-hooks/refs
+  const forceGraphData = useMemo(() => graphToForceGraphData(graph, lastForceData.current ?? undefined), [graph]);
+  useEffect(() => {
+    lastForceData.current = forceGraphData;
+  }, [forceGraphData]);
 
   const searchMatches = useMemo(() => {
     if (searchMode === 'tags') {
@@ -236,6 +243,51 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     [fgRef]
   );
 
+  // --- Link mode and select mode state (declared first; the handlers below use them) ---
+  const [linkFromId, setLinkFromId] = useState<string | null>(null);
+  // True when the link prompt follows adding someone you don't know personally.
+  const [linkIsNewPerson, setLinkIsNewPerson] = useState(false);
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [multiIds, setMultiIds] = useState<Set<string>>(new Set());
+
+  // --- Link mode: pick a contact, then tap people on the graph to link or unlink them ---
+
+  const beginLinking = useCallback((id: string, newPerson = false) => {
+    setLinkFromId(id);
+    setLinkIsNewPerson(newPerson);
+    setSelectedId(null);
+    setSelectMode(false);
+    setMultiIds(new Set());
+    setActionError(null);
+  }, []);
+
+  const endLinking = useCallback(() => {
+    setLinkFromId(null);
+    setLinkIsNewPerson(false);
+  }, []);
+
+  // --- Select mode: tap people to build a multi-selection ---
+
+  const toggleSelectMode = useCallback(() => {
+    setSelectMode((on) => !on);
+    setMultiIds(new Set());
+    setSelectedId(null);
+    setLinkFromId(null);
+  }, []);
+
+  const toggleMulti = useCallback((id: string) => {
+    if (nodesById.get(id)?.kind === 'SELF') return;
+    setMultiIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, [nodesById]);
+
+  const clearMulti = useCallback(() => setMultiIds(new Set()), []);
+
   // --- Contact CRUD and linking ---
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
   const pendingActionIdsRef = useRef<Set<string>>(new Set());
@@ -263,7 +315,10 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
       return {
         nodes: [...prev.nodes, ...nodes],
         edges: self
-          ? [...prev.edges, ...nodes.map((n) => ({ source: self.id, target: n.id, kind: 'DIRECT' as const }))]
+          ? [
+              ...prev.edges,
+              ...nodes.filter((n) => n.knownPersonally).map((n) => ({ source: self.id, target: n.id, kind: 'DIRECT' as const })),
+            ]
           : prev.edges,
       };
     });
@@ -274,11 +329,13 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
       withPending(
         'create-contact',
         async () => {
-          addContactsToGraph([await createContact(payload)]);
+          const created = await createContact(payload);
+          addContactsToGraph([created]);
+          if (!created.knownPersonally) beginLinking(created.id, true);
         },
         'Could not add this person.'
       ),
-    [withPending, addContactsToGraph]
+    [withPending, addContactsToGraph, beginLinking]
   );
 
   // Bulk import. Not routed through withPending: the import panel shows its own progress and errors.
@@ -357,6 +414,107 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
         'Could not remove this link.'
       ),
     [withPending]
+  );
+
+  // --- Multi-select actions: each applies to every selected person ---
+  const applyToEach = useCallback(
+    async (ids: string[], one: (id: string) => Promise<void>) => {
+      for (const id of ids) await one(id);
+    },
+    []
+  );
+
+  const handleBulkCloseness = useCallback(
+    (value: number) => {
+      const ids = [...multiIds];
+      return withPending(
+        'bulk-closeness',
+        async () => {
+          const updates = new Map<string, GraphNode>();
+          await applyToEach(ids, async (id) => {
+            updates.set(id, await updateContact(id, { strength: value }));
+          });
+          setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => updates.get(n.id) ?? n) }));
+        },
+        'Could not change closeness for everyone.'
+      );
+    },
+    [multiIds, withPending, applyToEach]
+  );
+
+  const handleBulkDelete = useCallback(() => {
+    const ids = [...multiIds];
+    return withPending(
+      'bulk-delete',
+      async () => {
+        const removed: string[] = [];
+        try {
+          await applyToEach(ids, async (id) => {
+            await deleteContact(id);
+            removed.push(id);
+          });
+        } finally {
+          const gone = new Set(removed);
+          setGraph((prev) => ({
+            nodes: prev.nodes.filter((n) => !gone.has(n.id)),
+            edges: prev.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target)),
+          }));
+          setMultiIds(new Set());
+        }
+      },
+      'Could not delete everyone.'
+    );
+  }, [multiIds, withPending, applyToEach]);
+
+  // Applies one tag to everyone selected, using the same rules as on a single card.
+  const handleBulkAddTag = useCallback(
+    (input: AddTagPayload) => {
+      const ids = [...multiIds];
+      return withPending(
+        'bulk-tag',
+        async () => {
+          const results = new Map<string, TagAssignment[]>();
+          const failed: string[] = [];
+          await applyToEach(ids, async (id) => {
+            try {
+              results.set(id, await addTagToUser(id, input));
+            } catch {
+              failed.push(id);
+            }
+          });
+          setGraph((prev) => ({
+            ...prev,
+            nodes: prev.nodes.map((n) => (results.has(n.id) ? { ...n, tags: results.get(n.id)! } : n)),
+          }));
+          if (failed.length > 0) {
+            throw new Error(`${failed.length} of ${ids.length} people already had this tag or hit a limit.`);
+          }
+        },
+        'Could not add this tag to everyone.'
+      );
+    },
+    [multiIds, withPending, applyToEach]
+  );
+
+  // A tap on the graph means whatever the current mode says it means.
+  const handleNodeTap = useCallback(
+    (id: string) => {
+      if (linkFromId) {
+        if (id === linkFromId || nodesById.get(id)?.kind === 'SELF') return;
+        if (linkedIdsFor(linkFromId).has(id)) {
+          handleUnlinkContacts(linkFromId, id);
+        } else {
+          handleLinkContacts(linkFromId, id);
+        }
+        return;
+      }
+      if (selectMode) {
+        toggleMulti(id);
+        return;
+      }
+      selectNode(id);
+    },
+    [linkFromId, selectMode, nodesById, linkedIdsFor, toggleMulti, selectNode, handleLinkContacts, handleUnlinkContacts]
   );
 
   // Tag and note edits only change `graph.nodes`; the layout is untouched.
@@ -468,6 +626,20 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     saveContactNote,
     isActionPending,
     handleUpdateSelfProfile,
+    // link mode
+    linkFromId,
+    linkIsNewPerson,
+    beginLinking,
+    endLinking,
+    // select mode
+    selectMode,
+    toggleSelectMode,
+    multiIds,
+    clearMulti,
+    handleNodeTap,
+    handleBulkCloseness,
+    handleBulkDelete,
+    handleBulkAddTag,
   };
 };
 

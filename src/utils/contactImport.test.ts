@@ -20,6 +20,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   tags: [],
   note: '',
   strength: 3 as const,
+  knownPersonally: true,
   editable: true,
   ...over,
 });

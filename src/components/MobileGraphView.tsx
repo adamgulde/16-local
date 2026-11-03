@@ -13,12 +13,14 @@ import {
   useGraphPhysics,
   STATIC_LAYOUT,
 } from '../graph/rendering';
+import { LinkPanel } from './LinkPanel';
+import { MultiSelectPanel } from './MultiSelectPanel';
 import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
 import { AddPersonForm } from './AddPersonForm';
 import { BottomSheet } from './BottomSheet';
 import { Instructions } from './Instructions';
-import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon } from './Icons';
+import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, SelectIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField } from './tags/TagQueryField';
 import { pickerRows } from './tags/tagTheme';
@@ -28,6 +30,8 @@ import { APP_VERSION } from '../version';
 type Sheet = 'card' | 'path' | 'settings' | 'search' | 'addPerson' | 'help' | null;
 
 const ZOOM_STEP_FACTOR = 1.6;
+const LINK_MODE_BACKGROUND = '#0d2236';
+const ANIMATED_LAYOUT = { warmupTicks: 0 } as const;
 
 // Corner floating circular glass buttons with 44px minimum touch targets
 const cornerButtonStyle: CSSProperties = {
@@ -148,6 +152,9 @@ export const MobileGraphView = () => {
   }
 
   const selected = c.selectedNode;
+  const canvasBackground = c.linkFromId ? LINK_MODE_BACKGROUND : '#121214';
+  const linkFrom = c.linkFromId ? c.nodesById.get(c.linkFromId) ?? null : null;
+  const selectedNodes = c.graph.nodes.filter((n) => c.multiIds.has(n.id));
   const selfInitial = c.selfProfile?.firstName?.[0]?.toUpperCase() ?? 'M';
 
   return (
@@ -163,7 +170,7 @@ export const MobileGraphView = () => {
         height: '100%',
         maxHeight: '100dvh',
         overflow: 'hidden',
-        background: '#121214',
+        background: canvasBackground,
         touchAction: 'none',
         userSelect: 'none',
       }}
@@ -174,9 +181,9 @@ export const MobileGraphView = () => {
           width={canvasSize.width}
           height={canvasSize.height}
           graphData={c.forceGraphData}
-          backgroundColor="#121214"
+          backgroundColor={canvasBackground}
           enableNodeDrag={false}
-          {...STATIC_LAYOUT}
+          {...(graphReady ? ANIMATED_LAYOUT : STATIC_LAYOUT)}
           onEngineStop={handleEngineStop}
           d3VelocityDecay={0.4}
           onRenderFramePre={(ctx, globalScale) => drawGrid(ctx, globalScale)}
@@ -185,6 +192,7 @@ export const MobileGraphView = () => {
               highlightNodes: c.highlightNodes,
               activePath: c.activePath,
               filterNodes: c.tagMatchIds,
+              selectedIds: c.multiIds,
             })
           }
           linkColor={(link) =>
@@ -198,7 +206,11 @@ export const MobileGraphView = () => {
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
           linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}
-          onNodeClick={(node) => selectAndShowCard(String(node.id))}
+          onNodeClick={(node) => {
+            const inMode = Boolean(c.linkFromId) || c.selectMode;
+            c.handleNodeTap(String(node.id));
+            if (!inMode) setActiveSheet('card');
+          }}
           onBackgroundClick={() => {
             if (activeSheet === 'card') closeCardSheet();
           }}
@@ -210,6 +222,15 @@ export const MobileGraphView = () => {
         <button style={cornerButtonStyle} onClick={() => setActiveSheet('search')} aria-label="Search" title="Search">
           <SearchIcon size={20} />
           {c.tagMatchIds && <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '4px', background: '#3d8bff' }} />}
+        </button>
+        <button
+          style={{ ...cornerButtonStyle, borderColor: c.selectMode ? '#3d8bff' : '#3a3a40', color: c.selectMode ? '#6ab0ff' : '#f0f0f0' }}
+          onClick={c.toggleSelectMode}
+          aria-label={c.selectMode ? 'Done selecting' : 'Select people'}
+          aria-pressed={c.selectMode}
+          title={c.selectMode ? 'Done selecting' : 'Select people'}
+        >
+          <SelectIcon size={20} />
         </button>
         <button style={cornerButtonStyle} onClick={() => setActiveSheet('addPerson')} aria-label="Add person" title="Add person">
           <PlusIcon size={20} />
@@ -402,8 +423,39 @@ export const MobileGraphView = () => {
         />
       </BottomSheet>
 
+      {/* Link panel, pinned to the bottom so the graph stays tappable above it */}
+      {linkFrom && (
+        <div style={{ position: 'absolute', left: 'max(12px, env(safe-area-inset-left, 12px))', right: 'max(12px, env(safe-area-inset-right, 12px))', bottom: 'max(12px, env(safe-area-inset-bottom, 12px))', zIndex: 40 }}>
+          <LinkPanel
+            from={linkFrom}
+            contacts={c.ownContacts}
+            linkedIds={c.linkedIdsFor(linkFrom.id)}
+            onToggle={(id) => c.handleNodeTap(id)}
+            onDone={c.endLinking}
+            busy={c.isActionPending(linkFrom.id)}
+            heading={c.linkIsNewPerson ? `Connect ${contactFullName(linkFrom)} to someone else?` : undefined}
+            compact
+          />
+        </div>
+      )}
+
+      {/* Select panel, pinned to the bottom */}
+      {c.selectMode && (
+        <div style={{ position: 'absolute', left: 'max(12px, env(safe-area-inset-left, 12px))', right: 'max(12px, env(safe-area-inset-right, 12px))', bottom: 'max(12px, env(safe-area-inset-bottom, 12px))', zIndex: 40 }}>
+          <MultiSelectPanel
+            selected={selectedNodes}
+            onCloseness={c.handleBulkCloseness}
+            onAddTag={c.handleBulkAddTag}
+            onDelete={c.handleBulkDelete}
+            onClear={c.clearMulti}
+            busy={c.isActionPending('bulk-closeness') || c.isActionPending('bulk-delete') || c.isActionPending('bulk-tag')}
+            compact
+          />
+        </div>
+      )}
+
       {/* Selected contact */}
-      <BottomSheet open={activeSheet === 'card' && selected !== null} onClose={closeCardSheet}>
+      <BottomSheet open={activeSheet === 'card' && selected !== null && !linkFrom && !c.selectMode} onClose={closeCardSheet}>
         {selected && (
           <>
             {c.activePath && (
@@ -413,8 +465,6 @@ export const MobileGraphView = () => {
             )}
             <ContactCard
               node={selected}
-              ownContacts={c.ownContacts}
-              linkedIds={c.linkedIdsFor(selected.id)}
               onClose={closeCardSheet}
               onUpdate={(payload) => c.handleUpdateContact(selected.id, payload)}
               onUpdateSelf={c.handleUpdateSelfProfile}
@@ -422,8 +472,10 @@ export const MobileGraphView = () => {
                 c.handleDeleteContact(selected.id);
                 closeCardSheet();
               }}
-              onLink={(otherId) => c.handleLinkContacts(selected.id, otherId)}
-              onUnlink={(otherId) => c.handleUnlinkContacts(selected.id, otherId)}
+              onStartLink={() => {
+                setActiveSheet(null);
+                c.beginLinking(selected.id);
+              }}
               onTagsChange={(update) => c.updateContactTags(selected.id, update)}
               onNoteChange={(note) => c.updateContactNote(selected.id, note)}
               onSaveNote={c.saveContactNote}

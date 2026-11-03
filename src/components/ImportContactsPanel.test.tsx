@@ -13,6 +13,7 @@ const existingSam: GraphNode = {
   tags: [],
   note: '',
   strength: 3 as const,
+  knownPersonally: true,
   editable: true,
 };
 

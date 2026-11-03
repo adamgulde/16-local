@@ -21,7 +21,8 @@ const baseNode: GraphNode = {
   phoneNumber: null,
   tags: [],
   note: '',
-  strength: 3 as const,
+  strength: 5.5,
+  knownPersonally: true,
   editable: true,
 };
 
@@ -46,13 +47,10 @@ describe('ContactCard', () => {
     render(
       <ContactCard
         node={baseNode}
-        ownContacts={[]}
-        linkedIds={new Set()}
         onClose={noop}
         onUpdate={noop}
         onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
+        onStartLink={() => undefined}
         onTagsChange={noop}
         onNoteChange={noop}
         onSaveNote={noopAsync}
@@ -83,14 +81,11 @@ describe('ContactCard', () => {
     render(
       <ContactCard
         node={selfNode}
-        ownContacts={[]}
-        linkedIds={new Set()}
         onClose={noop}
         onUpdate={noop}
         onUpdateSelf={noop}
         onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
+        onStartLink={() => undefined}
         onTagsChange={noop}
         onNoteChange={noop}
         onSaveNote={noopAsync}
@@ -111,13 +106,10 @@ describe('ContactCard', () => {
     render(
       <ContactCard
         node={baseNode}
-        ownContacts={[]}
-        linkedIds={new Set()}
         onClose={noop}
         onUpdate={noop}
         onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
+        onStartLink={() => undefined}
         onTagsChange={noop}
         onNoteChange={noop}
         onSaveNote={noopAsync}

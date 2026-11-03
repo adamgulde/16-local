@@ -24,11 +24,11 @@ describe('useGraphController (local data)', () => {
     expect(result.current.initError).toBeNull();
   });
 
-  it('adds a contact with a direct edge from you, at default closeness', async () => {
+  it('adds a contact with a direct edge from you, at default closeness (Friend, 5.5)', async () => {
     const { result } = await setup();
     await act(() => result.current.handleCreateContact({ firstName: 'Bea', lastName: 'Cruz' }));
     const created = result.current.graph.nodes.find((n) => n.firstName === 'Bea');
-    expect(created).toMatchObject({ kind: 'PLACEHOLDER', strength: 3 });
+    expect(created).toMatchObject({ kind: 'PLACEHOLDER', strength: 5.5 });
     expect(result.current.graph.edges).toContainEqual({ source: 'self', target: created!.id, kind: 'DIRECT' });
   });
 
@@ -78,5 +78,60 @@ describe('useGraphController (local data)', () => {
     await act(() => result.current.handleUpdateSelfProfile({ firstName: 'Ada', lastName: 'Lovelace' }));
     const self = result.current.graph.nodes.find((n) => n.kind === 'SELF');
     expect(self).toMatchObject({ firstName: 'Ada', lastName: 'Lovelace' });
+  });
+
+  it('link mode: tapping a person on the graph links them, and tapping again unlinks', async () => {
+    const { result } = await setup();
+    await act(() => result.current.handleCreateContact({ firstName: 'Mo' }));
+    await act(() => result.current.handleCreateContact({ firstName: 'Nia' }));
+    const [mo, nia] = ['Mo', 'Nia'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+
+    act(() => result.current.beginLinking(mo));
+    await act(() => result.current.handleNodeTap(nia));
+    expect(result.current.graph.edges.some((e) => e.kind === 'LINK' && [e.source, e.target].includes(nia))).toBe(true);
+
+    await act(() => result.current.handleNodeTap(nia));
+    expect(result.current.graph.edges.some((e) => e.kind === 'LINK')).toBe(false);
+  });
+
+  it('adding someone you don’t know adds them without a direct edge and opens the connect prompt', async () => {
+    const { result } = await setup();
+    await act(() => result.current.handleCreateContact({ firstName: 'Ola', knownPersonally: false }));
+    const ola = result.current.graph.nodes.find((n) => n.firstName === 'Ola')!;
+    expect(ola.knownPersonally).toBe(false);
+    expect(result.current.graph.edges.some((e) => e.target === ola.id && e.kind === 'DIRECT')).toBe(false);
+    expect(result.current.linkFromId).toBe(ola.id);
+    expect(result.current.linkIsNewPerson).toBe(true);
+  });
+
+  it('select mode: taps build a group, and closeness applies to everyone in it', async () => {
+    const { result } = await setup();
+    await act(() => result.current.handleCreateContact({ firstName: 'Pia' }));
+    await act(() => result.current.handleCreateContact({ firstName: 'Quin' }));
+    const ids = ['Pia', 'Quin'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+
+    act(() => result.current.toggleSelectMode());
+    await act(() => result.current.handleNodeTap(ids[0]));
+    await act(() => result.current.handleNodeTap(ids[1]));
+    expect([...result.current.multiIds].sort()).toEqual([...ids].sort());
+
+    await act(() => result.current.handleBulkCloseness(8.5));
+    for (const id of ids) {
+      expect(result.current.graph.nodes.find((n) => n.id === id)?.strength).toBe(8.5);
+    }
+  });
+
+  it('select mode: deleting the group removes everyone in it', async () => {
+    const { result } = await setup();
+    await act(() => result.current.handleCreateContact({ firstName: 'Ray' }));
+    await act(() => result.current.handleCreateContact({ firstName: 'Sia' }));
+    const ids = ['Ray', 'Sia'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+
+    act(() => result.current.toggleSelectMode());
+    await act(() => result.current.handleNodeTap(ids[0]));
+    await act(() => result.current.handleNodeTap(ids[1]));
+    await act(() => result.current.handleBulkDelete());
+    expect(result.current.graph.nodes.some((n) => ids.includes(n.id))).toBe(false);
+    expect(result.current.multiIds.size).toBe(0);
   });
 });

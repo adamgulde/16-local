@@ -5,10 +5,14 @@ export type NodeKind = 'SELF' | 'PLACEHOLDER';
 export type GraphEdgeKind = 'DIRECT' | 'LINK';
 export type TagKind = 'SELF' | 'CUSTOM' | 'PRIVATE';
 
-/** Relationship strength, 1 (distant) to 5 (very close). */
-export type Strength = 1 | 2 | 3 | 4 | 5;
-export const DEFAULT_STRENGTH: Strength = 3;
-export const isStrength = (n: unknown): n is Strength => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 5;
+/** Closeness, 1 (distant) to 10 (inner circle). Decimals are allowed. */
+export type Strength = number;
+export const STRENGTH_MIN = 1;
+export const STRENGTH_MAX = 10;
+/** Friend (the old 3 on a 1–5 scale, rescaled). */
+export const DEFAULT_STRENGTH: Strength = 5.5;
+export const isStrength = (n: unknown): n is Strength =>
+  typeof n === 'number' && Number.isFinite(n) && n >= STRENGTH_MIN && n <= STRENGTH_MAX;
 
 export interface TagAssignment {
   id: string;
@@ -47,7 +51,8 @@ export interface GraphNode {
   phoneNumber: string | null;
   tags: TagAssignment[];
   note: string;
-  strength: Strength; // SELF is always 5 (the centre of the graph)
+  strength: Strength; // SELF is always STRENGTH_MAX (the centre of the graph)
+  knownPersonally: boolean; // false: added, but not connected to you directly
   editable: boolean;
 }
 
@@ -68,6 +73,8 @@ export interface ContactInput {
   about?: string;
   phoneNumber?: string;
   strength?: number;
+  /** Defaults to true. False adds the person without a direct edge from you. */
+  knownPersonally?: boolean;
 }
 
 export interface TagInput {

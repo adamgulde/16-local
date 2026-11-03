@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import type { GraphNode, Strength, SelfProfile } from '../services/graphService';
+import type { GraphNode, SelfProfile } from '../services/graphService';
 import type { UpdateContactPayload } from '../services/contactService';
 import type { TagsUpdate } from '../services/tagService';
 import { contactFullName } from '../graph/mapping';
@@ -7,18 +7,17 @@ import { TagsAndNotes } from './TagsAndNotes';
 import { dividerStyle, sectionHeaderStyle } from './cardStyles';
 import { CloseIcon, DisconnectIcon } from './Icons';
 import { formatPhoneNumberDisplay, formatPhoneNumber } from '../utils/phoneUtils';
+import { ClosenessControl } from './ClosenessControl';
 
 interface ContactCardProps {
   node: GraphNode;
-  ownContacts: GraphNode[];
-  linkedIds: Set<string>;
   onClose: () => void;
   onUpdate: (payload: UpdateContactPayload) => void;
   // Only invoked for the SELF node.
   onUpdateSelf?: (payload: Partial<SelfProfile>) => void;
   onDelete: () => void;
-  onLink: (otherId: string) => void;
-  onUnlink: (otherId: string) => void;
+  /** Starts link mode for this person: the search panel, and taps on the graph link people. */
+  onStartLink: () => void;
   onTagsChange: (update: TagsUpdate) => void;
   onNoteChange: (note: string) => void;
   onSaveNote: (id: string, content: string) => Promise<void>;
@@ -29,14 +28,6 @@ interface ContactCardProps {
 }
 
 const SELF_BIO_MAX_LENGTH = 2000;
-const STRENGTHS: Strength[] = [1, 2, 3, 4, 5];
-const STRENGTH_LABELS: Record<Strength, string> = {
-  1: 'Distant',
-  2: 'Acquaintance',
-  3: 'Friend',
-  4: 'Close',
-  5: 'Inner circle',
-};
 
 const primaryButtonStyle: CSSProperties = {
   background: '#2a5f9e',
@@ -75,14 +66,11 @@ const inputStyle: CSSProperties = {
 
 export const ContactCard = ({
   node,
-  ownContacts,
-  linkedIds,
   onClose,
   onUpdate,
   onUpdateSelf,
   onDelete,
-  onLink,
-  onUnlink,
+  onStartLink,
   onTagsChange,
   onNoteChange,
   onSaveNote,
@@ -96,7 +84,6 @@ export const ContactCard = ({
   const [lastName, setLastName] = useState(node.lastName);
   const [about, setAbout] = useState(node.about);
   const [phoneNumber, setPhoneNumber] = useState(node.phoneNumber ?? '');
-  const [showLinkPicker, setShowLinkPicker] = useState(false);
 
   useEffect(() => {
     // Reset the draft fields whenever a different node is selected. Keyed on id only, so a save on
@@ -107,7 +94,6 @@ export const ContactCard = ({
     setAbout(node.about);
     setPhoneNumber(node.phoneNumber ?? '');
     setEditing(false);
-    setShowLinkPicker(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id]);
 
@@ -133,9 +119,6 @@ export const ContactCard = ({
     if (Object.keys(payload).length > 0) onUpdate(payload);
     setEditing(false);
   };
-
-  const linkableContacts = ownContacts.filter((c) => c.id !== node.id && !linkedIds.has(c.id));
-  const linkedContacts = ownContacts.filter((c) => linkedIds.has(c.id));
 
   return (
     <div className="contact-card" style={{ padding: compact ? '12px' : '16px', background: '#1c1c1e', border: '1px solid #3a3a40', borderRadius: '8px', ...style }}>
@@ -166,10 +149,7 @@ export const ContactCard = ({
           </button>
         )}
         {!isSelf && (
-          <button
-            onClick={() => setShowLinkPicker((v) => !v)}
-            style={{ ...secondaryButtonStyle, borderColor: showLinkPicker ? '#3d8bff' : '#3a3a40' }}
-          >
+          <button onClick={onStartLink} disabled={busy} style={secondaryButtonStyle}>
             Link to…
           </button>
         )}
@@ -198,75 +178,13 @@ export const ContactCard = ({
         )}
       </div>
 
-      {showLinkPicker && !isSelf && (
-        <div style={{ marginTop: '10px', padding: '8px', background: '#18181b', border: '1px solid #2d2d32', borderRadius: '8px' }}>
-          {linkedContacts.length > 0 && (
-            <div style={{ marginBottom: '8px' }}>
-              <p style={{ ...sectionHeaderStyle, fontSize: '12px' }}>Linked</p>
-              {linkedContacts.map((c) => (
-                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
-                  <span style={{ fontSize: '13px' }}>{contactFullName(c)}</span>
-                  <button onClick={() => onUnlink(c.id)} disabled={busy} style={secondaryButtonStyle}>
-                    Unlink
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <p style={{ ...sectionHeaderStyle, fontSize: '12px' }}>Link to another contact</p>
-          {linkableContacts.length === 0 ? (
-            <span style={{ color: '#8e8e93', fontSize: '12px' }}>No other contacts to link.</span>
-          ) : (
-            linkableContacts.map((c) => (
-              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
-                <span style={{ fontSize: '13px' }}>{contactFullName(c)}</span>
-                <button onClick={() => onLink(c.id)} disabled={busy} style={secondaryButtonStyle}>
-                  Link
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
       {!isSelf && (
         <>
           <hr style={dividerStyle} />
           <p style={sectionHeaderStyle}>Closeness</p>
-          <div role="radiogroup" aria-label="Relationship strength" style={{ display: 'flex', gap: '6px' }}>
-            {STRENGTHS.map((s) => {
-              const active = node.strength === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  aria-label={`${s} — ${STRENGTH_LABELS[s]}`}
-                  title={STRENGTH_LABELS[s]}
-                  disabled={busy || active}
-                  onClick={() => onUpdate({ strength: s })}
-                  style={{
-                    flex: 1,
-                    minHeight: 40,
-                    borderRadius: '6px',
-                    border: `1px solid ${active ? '#3d8bff' : '#3a3a40'}`,
-                    background: active ? 'rgba(61, 139, 255, 0.2)' : '#2c2c2e',
-                    color: active ? '#6ab0ff' : '#c0c0c6',
-                    fontWeight: active ? 700 : 500,
-                    cursor: busy || active ? 'default' : 'pointer',
-                  }}
-                >
-                  {s}
-                </button>
-              );
-            })}
-          </div>
-          <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#8e8e93' }}>{STRENGTH_LABELS[node.strength]}</p>
+          <ClosenessControl value={node.strength} disabled={busy} onCommit={(value) => onUpdate({ strength: value })} />
         </>
       )}
-
-      <hr style={dividerStyle} />
 
       {editing ? (
         <div>

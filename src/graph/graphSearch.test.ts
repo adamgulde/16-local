@@ -10,6 +10,7 @@ const base: Omit<GraphNode, 'id' | 'kind' | 'firstName' | 'lastName'> = {
   tags: [],
   note: '',
   strength: 3 as const,
+  knownPersonally: true,
   editable: true,
 };
 

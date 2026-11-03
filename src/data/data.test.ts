@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openNodeDb } from './testing/nodeDb';
 import { initDataLayer, loadTaxonomy } from './store';
+import { migrate, MIGRATIONS } from './migrate';
 import type { Db } from './db';
 import { createContact, patchContact, deleteContact, importContacts, linkContacts, unlinkContacts, upsertNote, MAX_CONTACTS, MAX_IMPORT_BATCH } from './contacts';
 import { addTagToContact, getTagsForContact, getAllTags, removeTagFromContact, MAX_TAGS_PER_CONTACT } from './tags';
@@ -40,7 +41,7 @@ describe('phone normalization', () => {
 describe('contacts', () => {
   it('creates with default strength 3 and returns a placeholder node', async () => {
     const c = await createContact(d, { firstName: '  Ada ', lastName: 'Lovelace', phoneNumber: '5550001111' });
-    expect(c).toMatchObject({ firstName: 'Ada', lastName: 'Lovelace', kind: 'PLACEHOLDER', strength: 3, phoneNumber: '+1 555-000-1111', tags: [] });
+    expect(c).toMatchObject({ firstName: 'Ada', lastName: 'Lovelace', kind: 'PLACEHOLDER', strength: 5.5, phoneNumber: '+1 555-000-1111', tags: [] });
   });
 
   it('requires a first name and enforces length limits', async () => {
@@ -48,12 +49,12 @@ describe('contacts', () => {
     await expect(createContact(d, { firstName: 'x'.repeat(101) })).rejects.toThrow('100 characters');
   });
 
-  it('keeps strength within 1–5 and integer only', async () => {
-    const c = await createContact(d, { firstName: 'Bo', strength: 5 });
-    expect(c.strength).toBe(5);
-    await expect(createContact(d, { firstName: 'Bo', strength: 0 })).rejects.toBeInstanceOf(DataError);
-    await expect(createContact(d, { firstName: 'Bo', strength: 6 })).rejects.toBeInstanceOf(DataError);
-    await expect(createContact(d, { firstName: 'Bo', strength: 2.5 })).rejects.toBeInstanceOf(DataError);
+  it('accepts decimal closeness from 1 to 10 and rejects anything outside', async () => {
+    const c = await createContact(d, { firstName: 'Bo', strength: 7.35 });
+    expect(c.strength).toBe(7.35);
+    await expect(createContact(d, { firstName: 'Bo', strength: 0.9 })).rejects.toBeInstanceOf(DataError);
+    await expect(createContact(d, { firstName: 'Bo', strength: 10.1 })).rejects.toBeInstanceOf(DataError);
+    await expect(createContact(d, { firstName: 'Bo', strength: NaN })).rejects.toBeInstanceOf(DataError);
     const moved = await patchContact(d, c.id, { strength: 1 });
     expect(moved.strength).toBe(1);
   });
@@ -104,7 +105,7 @@ describe('import', () => {
     expect(r.skippedDuplicates).toBe(2);
     expect(r.skippedInvalid).toBe(1);
     expect(r.created.map((c) => c.firstName)).toEqual(['Finn', 'Gia', 'OnlyLast']);
-    expect(r.created.every((c) => c.kind === 'PLACEHOLDER' && c.strength === 3)).toBe(true);
+    expect(r.created.every((c) => c.kind === 'PLACEHOLDER' && c.strength === 5.5)).toBe(true);
   });
 
   it('truncates over-long fields instead of rejecting', async () => {
@@ -202,12 +203,12 @@ describe('tags', () => {
 describe('graph', () => {
   it('builds you at the centre with direct edges and links', async () => {
     await updateSelfProfile(d, { firstName: 'Me', lastName: 'Myself' });
-    const a = await createContact(d, { firstName: 'A', strength: 5 });
+    const a = await createContact(d, { firstName: 'A', strength: 9 });
     const b = await createContact(d, { firstName: 'B', strength: 1 });
     await linkContacts(d, a.id, b.id);
     const g = await buildGraph(d);
     const self = g.nodes.find((n) => n.kind === 'SELF')!;
-    expect(self).toMatchObject({ id: 'self', firstName: 'Me', strength: 5 });
+    expect(self).toMatchObject({ id: 'self', firstName: 'Me', strength: 10 });
     expect(g.edges.filter((e) => e.kind === 'DIRECT').map((e) => e.target).sort()).toEqual([a.id, b.id].sort());
     expect(g.edges.find((e) => e.kind === 'LINK')).toBeDefined();
     expect(g.nodes.find((n) => n.id === b.id)?.strength).toBe(1);
@@ -217,5 +218,55 @@ describe('graph', () => {
     await initDataLayer(d);
     const [{ n }] = await d.all<{ n: number }>('SELECT COUNT(*) AS n FROM tags');
     expect(n).toBe(455);
+  });
+});
+
+describe('closeness migration (002) and later', () => {
+  it('rescales 1–5 values to 1–10 and keeps links and tags attached', async () => {
+    // Build a database at schema version 1 with the old 1–5 integer closeness.
+    const raw = openNodeDb();
+    await raw.exec('PRAGMA foreign_keys = ON');
+    await raw.exec(MIGRATIONS[0].sql);
+    await raw.exec('PRAGMA user_version = 1');
+    const seed = (await import('./seed/tags.json')).default as { id: string }[];
+    await raw.run(`INSERT INTO tags (id, category, label, parent_id, level, icon, display_order, self_only, single_select) VALUES (?, 'C', 'T', NULL, 2, NULL, 0, 0, 0)`, [seed[0].id]);
+    const now = '2026-01-01T00:00:00Z';
+    for (const [id, strength] of [['00000000-0000-4000-8000-000000000001', 1], ['00000000-0000-4000-8000-000000000002', 2], ['00000000-0000-4000-8000-000000000003', 3], ['00000000-0000-4000-8000-000000000004', 4], ['00000000-0000-4000-8000-000000000005', 5]] as const) {
+      await raw.run(`INSERT INTO contacts (id, first_name, strength, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, [id, id.slice(-1), strength, now, now]);
+    }
+    await raw.run(`INSERT INTO contact_links (id, contact_a_id, contact_b_id, created_at) VALUES ('l1', '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', ?)`, [now]);
+    await raw.run(`INSERT INTO contact_tags (id, contact_id, tag_id) VALUES ('t1', '00000000-0000-4000-8000-000000000003', ?)`, [seed[0].id]);
+
+    await migrate(raw);
+
+    const rows = await raw.all<{ id: string; strength: number }>('SELECT id, strength FROM contacts ORDER BY id');
+    expect(rows.map((r) => r.strength)).toEqual([1, 3.25, 5.5, 7.75, 10]);
+    expect(await raw.all('SELECT * FROM contact_links')).toHaveLength(1);
+    expect(await raw.all('SELECT * FROM contact_tags')).toHaveLength(1);
+    const [{ user_version }] = await raw.all<{ user_version: number }>('PRAGMA user_version');
+    expect(user_version).toBe(MIGRATIONS.length);
+  });
+});
+
+describe('people you don’t know personally (003)', () => {
+  it('adds the person with no direct edge from you, but keeps them in the graph', async () => {
+    const stranger = await createContact(d, { firstName: 'Ivo', knownPersonally: false });
+    expect(stranger.knownPersonally).toBe(false);
+    const g = await buildGraph(d);
+    expect(g.nodes.map((n) => n.id)).toContain(stranger.id);
+    expect(g.edges.some((e) => e.target === stranger.id && e.kind === 'DIRECT')).toBe(false);
+  });
+
+  it('defaults to someone you know, with a direct edge from you', async () => {
+    const friend = await createContact(d, { firstName: 'Jun' });
+    expect(friend.knownPersonally).toBe(true);
+    expect((await buildGraph(d)).edges).toContainEqual({ source: 'self', target: friend.id, kind: 'DIRECT' });
+  });
+
+  it('a stranger can still be linked to someone you know', async () => {
+    const friend = await createContact(d, { firstName: 'Kit' });
+    const stranger = await createContact(d, { firstName: 'Lu', knownPersonally: false });
+    await linkContacts(d, friend.id, stranger.id);
+    expect((await buildGraph(d)).edges.some((e) => e.kind === 'LINK')).toBe(true);
   });
 });
