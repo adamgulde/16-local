@@ -18,6 +18,7 @@ import { ContactCard } from './ContactCard';
 import { AddPersonForm } from './AddPersonForm';
 import { DraggableCard } from './DraggableCard';
 import { Instructions } from './Instructions';
+import { APP_VERSION } from '../version';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, CloseIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
@@ -304,6 +305,7 @@ export const GraphContainer = () => {
               >
                 How it works
               </button>
+              <p style={{ margin: '12px 0 0', fontSize: 11, color: '#6b6b70', textAlign: 'center' }}>16 Local v{APP_VERSION}</p>
             </div>
           )}
         </div>

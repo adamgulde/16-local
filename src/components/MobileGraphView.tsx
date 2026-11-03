@@ -23,6 +23,7 @@ import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField } from './tags/TagQueryField';
 import { pickerRows } from './tags/tagTheme';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
+import { APP_VERSION } from '../version';
 
 type Sheet = 'card' | 'path' | 'settings' | 'search' | 'addPerson' | 'help' | null;
 
@@ -379,6 +380,7 @@ export const MobileGraphView = () => {
         >
           How it works
         </button>
+        <p style={{ margin: '14px 0 0', fontSize: 11, color: '#6b6b70', textAlign: 'center' }}>16 Local v{APP_VERSION}</p>
       </BottomSheet>
 
       <BottomSheet open={activeSheet === 'help'} onClose={() => setActiveSheet(null)} title="How it works" maxHeight="85dvh">
