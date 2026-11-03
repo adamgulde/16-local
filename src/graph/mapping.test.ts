@@ -5,8 +5,8 @@ import { linkDistanceFor, type GLink } from './rendering';
 
 const graph: Graph = {
   nodes: [
-    { id: 'self', kind: 'SELF', firstName: 'Me', lastName: '', about: '', phoneNumber: null, tags: [], note: '', strength: 5, knownPersonally: true, editable: true },
-    { id: 'a', kind: 'PLACEHOLDER', firstName: 'Ann', lastName: 'Apple', about: '', phoneNumber: '+1 555-000-0001', tags: [], note: '', strength: 4, knownPersonally: true, editable: true },
+    { id: 'self', kind: 'SELF', firstName: 'Me', lastName: '', about: '', phoneNumber: null, tags: [], note: '', strength: 5, knownPersonally: true, lastInteractedAt: null, editable: true },
+    { id: 'a', kind: 'PLACEHOLDER', firstName: 'Ann', lastName: 'Apple', about: '', phoneNumber: '+1 555-000-0001', tags: [], note: '', strength: 4, knownPersonally: true, lastInteractedAt: null, editable: true },
   ],
   edges: [
     { source: 'self', target: 'a', kind: 'DIRECT' },

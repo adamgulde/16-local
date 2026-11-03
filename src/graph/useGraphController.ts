@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
 import { fetchGraph, fetchSelfProfile, updateSelf, type Graph, type GraphNode, type SelfProfile } from '../services/graphService';
+import { recentPeople, peopleNeedingInfo } from './people';
 import {
   createContact,
   deleteContact,
@@ -13,7 +14,7 @@ import {
   type UpdateContactPayload,
 } from '../services/contactService';
 import { addTagToUser, fetchAllTags, type Tag, type TagInput, type TagsUpdate } from '../services/tagService';
-import { putContactNote } from '../services/contactService';
+import { putContactNote, touchContacts } from '../services/contactService';
 import { getSafeErrorMessage } from '../utils/errors';
 import { graphToForceGraphData, contactFullName, type ForceGraphData } from './mapping';
 import { EMPTY_TAG_CRITERIA, findPathBFS, searchGraphNodes, type GraphSearchMode, type TagCriteria } from './graphSearch';
@@ -52,6 +53,25 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
   const nodesById = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph]);
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null;
   const selfNode = useMemo(() => graph.nodes.find((n) => n.kind === 'SELF') ?? null, [graph]);
+
+  // When you last worked with people this session. Stored times come from the graph; these override them.
+  const [interactedAt, setInteractedAt] = useState<Record<string, string>>({});
+  const markInteracted = useCallback(
+    (ids: string[]) => {
+      const people = [...new Set(ids)].filter((id) => id && nodesById.get(id)?.kind !== 'SELF');
+      if (people.length === 0) return;
+      const now = new Date().toISOString();
+      setInteractedAt((prev) => {
+        const next = { ...prev };
+        for (const id of people) next[id] = now;
+        return next;
+      });
+      touchContacts(people).catch(() => undefined);
+    },
+    [nodesById]
+  );
+  const recentNodes = useMemo(() => recentPeople(graph.nodes, interactedAt), [graph, interactedAt]);
+  const needsInfoNodes = useMemo(() => peopleNeedingInfo(graph.nodes), [graph]);
 
   // Rebuilt only when the graph is (re)fetched or edited. Editing a contact's about/tags never hands
   // ForceGraph2D a new graphData, so the layout doesn't re-run.
@@ -136,6 +156,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
   const selectNode = useCallback(
     (nodeId: string) => {
       if (!nodesById.has(nodeId)) return;
+      markInteracted([nodeId]);
       setSelectedId(nodeId);
       setActionError(null);
 
@@ -156,7 +177,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
       setHighlightNodes(neighbors);
       setHighlightLinks(links);
     },
-    [nodesById, activePath, graph]
+    [nodesById, activePath, graph, markInteracted]
   );
 
   // Deselecting never discards an open path; only the neighbour highlight is cleared, and only when
@@ -328,11 +349,12 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
         async () => {
           const created = await createContact(payload);
           addContactsToGraph([created]);
+          markInteracted([created.id]);
           if (!created.knownPersonally) beginLinking(created.id, true);
         },
         'Could not add this person.'
       ),
-    [withPending, addContactsToGraph, beginLinking]
+    [withPending, addContactsToGraph, beginLinking, markInteracted]
   );
 
   // Bulk import. Not routed through withPending: the import panel shows its own progress and errors.
@@ -358,11 +380,12 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
         id,
         async () => {
           const updated = await updateContact(id, payload);
+          markInteracted([id]);
           setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? updated : n)) }));
         },
         'Could not save changes.'
       ),
-    [withPending]
+    [withPending, markInteracted]
   );
 
   const handleDeleteContact = useCallback(
@@ -431,12 +454,13 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
           await applyToEach(ids, async (id) => {
             updates.set(id, await updateContact(id, { strength: value }));
           });
+          markInteracted(ids);
           setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => updates.get(n.id) ?? n) }));
         },
         'Could not change closeness for everyone.'
       );
     },
-    [multiIds, withPending, applyToEach]
+    [multiIds, withPending, applyToEach, markInteracted]
   );
 
   const handleBulkDelete = useCallback(() => {
@@ -479,6 +503,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
               failed.push(id);
             }
           });
+          markInteracted([...results.keys()]);
           setGraph((prev) => ({
             ...prev,
             nodes: prev.nodes.map((n) => (results.has(n.id) ? { ...n, tags: results.get(n.id)! } : n)),
@@ -490,7 +515,7 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
         'Could not add this tag to everyone.'
       );
     },
-    [multiIds, withPending, applyToEach]
+    [multiIds, withPending, applyToEach, markInteracted]
   );
 
   // A tap on the graph means whatever the current mode says it means.
@@ -499,8 +524,10 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
       if (linkFromId) {
         if (id === linkFromId || nodesById.get(id)?.kind === 'SELF') return;
         if (linkedIdsFor(linkFromId).has(id)) {
+          markInteracted([linkFromId, id]);
           handleUnlinkContacts(linkFromId, id);
         } else {
+          markInteracted([linkFromId, id]);
           handleLinkContacts(linkFromId, id);
         }
         return;
@@ -511,21 +538,29 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
       }
       selectNode(id);
     },
-    [linkFromId, selectMode, nodesById, linkedIdsFor, toggleMulti, selectNode, handleLinkContacts, handleUnlinkContacts]
+    [linkFromId, selectMode, nodesById, linkedIdsFor, toggleMulti, selectNode, handleLinkContacts, handleUnlinkContacts, markInteracted]
   );
 
   // Tag and note edits only change `graph.nodes`; the layout is untouched.
-  const updateContactTags = useCallback((id: string, update: TagsUpdate) => {
-    setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, tags: update(n.tags) } : n)) }));
-  }, []);
+  const updateContactTags = useCallback(
+    (id: string, update: TagsUpdate) => {
+      markInteracted([id]);
+      setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, tags: update(n.tags) } : n)) }));
+    },
+    [markInteracted]
+  );
 
   const updateContactNote = useCallback((id: string, note: string) => {
     setGraph((prev) => ({ ...prev, nodes: prev.nodes.map((n) => (n.id === id ? { ...n, note } : n)) }));
   }, []);
 
-  const saveContactNote = useCallback(async (id: string, content: string) => {
-    await putContactNote(id, content);
-  }, []);
+  const saveContactNote = useCallback(
+    async (id: string, content: string) => {
+      markInteracted([id]);
+      await putContactNote(id, content);
+    },
+    [markInteracted]
+  );
 
   // --- Your own profile ---
   const handleUpdateSelfProfile = useCallback(
@@ -623,6 +658,9 @@ export const useGraphController = (fgRef: RefObject<ForceGraphMethods<GNode, GLi
     saveContactNote,
     isActionPending,
     handleUpdateSelfProfile,
+    // recent and needs-info lists
+    recentNodes,
+    needsInfoNodes,
     // link mode
     linkFromId,
     linkIsNewPerson,

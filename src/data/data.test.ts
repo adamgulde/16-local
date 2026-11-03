@@ -3,7 +3,7 @@ import { openNodeDb } from './testing/nodeDb';
 import { initDataLayer } from './store';
 import { migrate, MIGRATIONS } from './migrate';
 import type { Db } from './db';
-import { createContact, patchContact, deleteContact, importContacts, linkContacts, unlinkContacts, upsertNote, MAX_CONTACTS, MAX_IMPORT_BATCH } from './contacts';
+import { createContact, patchContact, deleteContact, importContacts, linkContacts, unlinkContacts, upsertNote, touchContacts, MAX_CONTACTS, MAX_IMPORT_BATCH } from './contacts';
 import { addTagToContact, getTagsForContact, getTagsByContact, listTags, removeTagFromContact, MAX_TAGS_PER_CONTACT, MAX_TAG_LENGTH } from './tags';
 import { buildGraph, updateSelfProfile } from './graph';
 import { cleanPhone, phoneKey } from './phone';
@@ -263,5 +263,15 @@ describe('people you don’t know personally (003)', () => {
     const stranger = await createContact(d, { firstName: 'Lu', knownPersonally: false });
     await linkContacts(d, friend.id, stranger.id);
     expect((await buildGraph(d)).edges.some((e) => e.kind === 'LINK')).toBe(true);
+  });
+});
+
+describe('last interaction (005)', () => {
+  it('is empty until you touch someone, then stored and shown on the graph', async () => {
+    const c = await createContact(d, { firstName: 'Mae' });
+    expect(c.lastInteractedAt).toBeNull();
+    await touchContacts(d, [c.id, c.id, 'missing-id']);
+    const node = (await buildGraph(d)).nodes.find((n) => n.id === c.id);
+    expect(node?.lastInteractedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });

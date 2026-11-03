@@ -30,6 +30,7 @@ export interface GraphNode {
   note: string;
   strength: Strength; // SELF is always STRENGTH_MAX (the centre of the graph)
   knownPersonally: boolean; // false: added, but not connected to you directly
+  lastInteractedAt: string | null; // ISO time you last worked with this person; null if never
   editable: boolean;
 }
 

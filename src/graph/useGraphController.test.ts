@@ -134,4 +134,16 @@ describe('useGraphController (local data)', () => {
     expect(result.current.graph.nodes.some((n) => ids.includes(n.id))).toBe(false);
     expect(result.current.multiIds.size).toBe(0);
   });
+
+  it('recent: people you open or change go to the top of the recent list', async () => {
+    const { result } = await setup();
+    await act(() => result.current.handleCreateContact({ firstName: 'Ula' }));
+    await act(() => result.current.handleCreateContact({ firstName: 'Vic' }));
+    const [ula, vic] = ['Ula', 'Vic'].map((n) => result.current.graph.nodes.find((x) => x.firstName === n)!.id);
+    expect(result.current.recentNodes.map((n) => n.id)).toEqual([vic, ula]);
+
+    act(() => result.current.selectNode(ula));
+    expect(result.current.recentNodes[0].id).toBe(ula);
+    expect(result.current.recentNodes.some((n) => n.kind === 'SELF')).toBe(false);
+  });
 });

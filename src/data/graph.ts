@@ -29,6 +29,7 @@ export const buildGraph = async (d: Db): Promise<Graph> => {
       note: '',
       strength: STRENGTH_MAX,
       knownPersonally: true,
+      lastInteractedAt: null,
       editable: true,
     },
     ...contacts.map<GraphNode>((c) => ({
@@ -42,6 +43,7 @@ export const buildGraph = async (d: Db): Promise<Graph> => {
       note: c.note,
       strength: c.strength,
       knownPersonally: c.known_personally === 1,
+      lastInteractedAt: c.last_interacted_at,
       editable: true,
     })),
   ];

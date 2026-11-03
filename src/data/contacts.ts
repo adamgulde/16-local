@@ -21,6 +21,7 @@ export interface ContactRow {
   note: string;
   strength: number;
   known_personally: number;
+  last_interacted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +37,7 @@ const toNode = (row: ContactRow, tags: GraphNode['tags'] = []): GraphNode => ({
   note: row.note,
   strength: row.strength,
   knownPersonally: row.known_personally === 1,
+  lastInteractedAt: row.last_interacted_at,
   editable: true,
 });
 
@@ -232,3 +234,15 @@ export const importContacts = async (
   return { created, skippedDuplicates, skippedInvalid };
 };
 
+
+/** Records that you worked with these people now. Unknown ids are ignored. */
+export const touchContacts = async (d: Db, ids: string[]): Promise<void> => {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return;
+  const now = nowIso();
+  await d.transaction(async (tx) => {
+    for (const id of unique) {
+      await tx.run('UPDATE contacts SET last_interacted_at = ? WHERE id = ?', [now, id]);
+    }
+  });
+};

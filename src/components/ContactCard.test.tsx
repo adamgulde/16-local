@@ -23,6 +23,7 @@ const baseNode: GraphNode = {
   note: '',
   strength: 5.5,
   knownPersonally: true,
+  lastInteractedAt: null,
   editable: true,
 };
 

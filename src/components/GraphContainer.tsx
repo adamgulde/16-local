@@ -13,6 +13,7 @@ import {
   STATIC_LAYOUT,
 } from '../graph/rendering';
 import { LinkPanel } from './LinkPanel';
+import { QuickPeopleList } from './QuickPeopleList';
 import { MultiSelectPanel } from './MultiSelectPanel';
 import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
@@ -226,7 +227,15 @@ export const GraphContainer = () => {
           <SearchModeToggle mode={c.searchMode} onChange={c.setSearchMode} modes={GRAPH_SEARCH_MODES} />
 
           {/* Contact suggestions for the text modes */}
-          {c.searchMode !== 'tags' && c.showSuggestions && c.searchMatches.length > 0 && (
+          {c.searchMode !== 'tags' && c.showSuggestions && !c.searchTerm.trim() && (
+            <div
+              onMouseDown={(e) => e.preventDefault()}
+              style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, ...floatingPanelStyle, maxHeight: '320px', overflowY: 'auto', padding: '6px 8px 8px', zIndex: 30 }}
+            >
+              <QuickPeopleList recent={c.recentNodes} needsInfo={c.needsInfoNodes} onPick={(id) => c.handleSelectSearchResult(id)} />
+            </div>
+          )}
+          {c.searchMode !== 'tags' && c.showSuggestions && c.searchTerm.trim() && c.searchMatches.length > 0 && (
             <div
               onMouseDown={(e) => e.preventDefault()}
               style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, ...floatingPanelStyle, maxHeight: '260px', overflowY: 'auto', zIndex: 30 }}

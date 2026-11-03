@@ -21,6 +21,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   note: '',
   strength: 3 as const,
   knownPersonally: true,
+  lastInteractedAt: null,
   editable: true,
   ...over,
 });

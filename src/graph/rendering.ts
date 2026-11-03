@@ -133,7 +133,7 @@ export const useGraphPhysics = (
     // Once the first layout has settled, restart the simulation so this change animates from the
     // current positions instead of waiting for the next interaction.
     if (ready) fgRef.current?.d3ReheatSimulation();
-  }, [data, ready, fgRef]);
+  }, [data, links, ready, fgRef]);
 };
 
 export const drawGrid = (ctx: CanvasRenderingContext2D, globalScale: number) => {

@@ -7,6 +7,7 @@ import {
   linkContacts as linkContactRows,
   unlinkContacts as unlinkContactRows,
   importContacts as importContactRows,
+  touchContacts as touchContactRows,
 } from '../data/contacts';
 import type { ContactInput, GraphNode, ImportResult } from '../data/types';
 
@@ -53,3 +54,6 @@ export const importContacts = async (
   }
   return total;
 };
+
+/** Records that you worked with these people now (drives the Recent list). */
+export const touchContacts = (ids: string[]): Promise<void> => touchContactRows(db(), ids);

@@ -61,6 +61,14 @@ export const Instructions = () => (
       </p>
     </section>
 
+    <section style={sectionStyle}>
+      <h3 style={headingStyle}>Recent and needs info</h3>
+      <p style={textStyle}>
+        Tap the search box with nothing typed to see the people you worked with most recently, and the
+        people whose phone, about text or tags are still blank.
+      </p>
+    </section>
+
     <section>
       <h3 style={headingStyle}>Your data</h3>
       <p style={textStyle}>

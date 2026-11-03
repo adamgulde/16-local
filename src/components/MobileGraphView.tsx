@@ -13,6 +13,7 @@ import {
   STATIC_LAYOUT,
 } from '../graph/rendering';
 import { LinkPanel } from './LinkPanel';
+import { QuickPeopleList } from './QuickPeopleList';
 import { MultiSelectPanel } from './MultiSelectPanel';
 import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
@@ -359,8 +360,19 @@ export const MobileGraphView = () => {
             style={{ padding: '12px', width: '100%', boxSizing: 'border-box', marginBottom: '14px', background: '#1c1c1e', border: '1px solid #3a3a40', color: '#fff', borderRadius: '8px', fontSize: '16px' }}
           />
         )}
+        {c.searchMode !== 'tags' && c.searchTerm.trim() === '' && (
+          <QuickPeopleList
+            large
+            recent={c.recentNodes}
+            needsInfo={c.needsInfoNodes}
+            onPick={(id) => {
+              focusAndShowCard(id);
+              c.setSearchTerm('');
+            }}
+          />
+        )}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {c.searchMatches.map((n) => (
+          {(c.searchMode === 'tags' || c.searchTerm.trim() !== '') && c.searchMatches.map((n) => (
             <button
               key={n.id}
               onClick={() => {
