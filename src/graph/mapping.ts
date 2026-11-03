@@ -9,6 +9,8 @@ export interface ForceGraphNode {
   phoneNumber: string | null;
   editable: boolean;
   strength: Strength;
+  /** False for people you don't know personally: they have no direct link to you. */
+  direct: boolean;
   /** The tags this person pulls on (see tagGroupsOf): at most GROUP_TAG_LIMIT, most common first. */
   tagIds: string[];
   val: number;
@@ -95,6 +97,7 @@ export const graphToForceGraphData = (graph: Graph, previous?: ForceGraphData): 
         phoneNumber: n.phoneNumber,
         editable: n.editable,
         strength: n.strength,
+        direct: n.knownPersonally,
         tagIds: effective.get(n.id) ?? [],
         val: n.kind === 'SELF' ? NODE_VAL_SELF : NODE_VAL_DEFAULT,
       };

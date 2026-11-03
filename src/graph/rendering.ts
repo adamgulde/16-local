@@ -22,8 +22,13 @@ export const LABEL_VISIBILITY_SCALE = 0.6;
 export const SELF_COLOR = '#3d8bff';
 export const PLACEHOLDER_COLOR = '#9ca3af';
 
-export const colorForNode = (node: Pick<ForceGraphNode, 'kind'>): string =>
-  node.kind === 'SELF' ? SELF_COLOR : PLACEHOLDER_COLOR;
+// People you don't know personally: no direct link to you, so they're drawn darker and recede.
+export const UNKNOWN_COLOR = '#4a4f57';
+
+export const colorForNode = (node: Pick<ForceGraphNode, 'kind' | 'direct'>): string => {
+  if (node.kind === 'SELF') return SELF_COLOR;
+  return node.direct ? PLACEHOLDER_COLOR : UNKNOWN_COLOR;
+};
 
 const CHARGE = -60;
 
@@ -336,6 +341,9 @@ export const linkColorFor = (
   const targetId = nodeRefId(link.target as string | GNode);
   const isHighlighted = highlightLinks.has(`${sourceId}-${targetId}`) || highlightLinks.has(`${targetId}-${sourceId}`);
   if (isHighlighted) return 'red';
+  // Direct links to you are not drawn: they'd clutter the graph. They appear only when highlighted
+  // (a selection or a path), and the layout still uses them.
+  if (link.kind === 'DIRECT') return 'rgba(0, 0, 0, 0)';
 
   const isFilteredOut = filterNodes !== null && (!filterNodes.has(sourceId) || !filterNodes.has(targetId));
   const dimmed = activePath !== null || isFilteredOut;
