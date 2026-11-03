@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import type { User } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import { contactFullName } from '../graph/mapping';
 import { GRAPH_SEARCH_MODES, GRAPH_SEARCH_PLACEHOLDERS } from '../graph/graphSearch';
@@ -18,34 +17,14 @@ import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
 import { AddPersonForm } from './AddPersonForm';
 import { BottomSheet } from './BottomSheet';
-import { ShareRequestsPanel } from './ShareRequestsPanel';
-import { SharingSettingsPanel } from './SharingSettingsPanel';
-import { ShareModePanel } from './ShareModePanel';
-import { OtherGraphView } from './OtherGraphView';
-import {
-  SearchIcon,
-  MailboxIcon,
-  SettingsIcon,
-  TargetIcon,
-  PlusIcon,
-  MinusIcon,
-  MaximizeIcon,
-  ColumnsIcon,
-  GridIcon,
-} from './Icons';
+import { Instructions } from './Instructions';
+import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField } from './tags/TagQueryField';
 import { pickerRows } from './tags/tagTheme';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
 
-interface MobileGraphViewProps {
-  currentUser: User;
-  onSwitchToColumns?: () => void;
-  initialFocusUserId?: string | null;
-  initialFindPathTargetId?: string | null;
-}
-
-type Sheet = 'card' | 'path' | 'notifications' | 'settings' | 'search' | 'addPerson' | null;
+type Sheet = 'card' | 'path' | 'settings' | 'search' | 'addPerson' | 'help' | null;
 
 const ZOOM_STEP_FACTOR = 1.6;
 
@@ -71,24 +50,6 @@ const cornerButtonStyle: CSSProperties = {
   touchAction: 'manipulation',
 };
 
-const tabButtonStyle = (active: boolean): CSSProperties => ({
-  flex: 1,
-  padding: '10px 8px',
-  minHeight: 44,
-  borderRadius: '8px',
-  border: '1px solid',
-  borderColor: active ? '#3d8bff' : '#3a3a40',
-  background: active ? 'rgba(61, 139, 255, 0.15)' : '#2c2c2e',
-  color: active ? '#6ab0ff' : '#9a9a9a',
-  fontSize: '13px',
-  fontWeight: 600,
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  touchAction: 'manipulation',
-});
-
 const fabActionStyle: CSSProperties = {
   minHeight: 44,
   padding: '0 16px',
@@ -106,12 +67,7 @@ const fabActionStyle: CSSProperties = {
   touchAction: 'manipulation',
 };
 
-export const MobileGraphView = ({
-  currentUser,
-  onSwitchToColumns,
-  initialFocusUserId,
-  initialFindPathTargetId,
-}: MobileGraphViewProps) => {
+export const MobileGraphView = () => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(fgRef);
   const hasOrientedRef = useRef(false);
@@ -121,9 +77,7 @@ export const MobileGraphView = ({
   const handleEngineStop = () => {
     if (hasOrientedRef.current) return;
     hasOrientedRef.current = true;
-    if (initialFocusUserId) c.focusUser(initialFocusUserId, 0);
-    else if (initialFindPathTargetId) c.handleFindPath(initialFindPathTargetId);
-    else c.handleLocateMe(0);
+    c.handleLocateMe(0);
     setGraphReady(true);
   };
 
@@ -175,10 +129,6 @@ export const MobileGraphView = ({
     setActiveSheet(null);
   }, [c]);
 
-  const closePathSheet = useCallback(() => {
-    setActiveSheet(null);
-  }, []);
-
   if (c.isLoading) {
     return (
       <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#121214', color: '#9a9a9a' }}>
@@ -197,6 +147,7 @@ export const MobileGraphView = ({
   }
 
   const selected = c.selectedNode;
+  const selfInitial = c.selfProfile?.firstName?.[0]?.toUpperCase() ?? 'M';
 
   return (
     <div
@@ -233,7 +184,6 @@ export const MobileGraphView = ({
               highlightNodes: c.highlightNodes,
               activePath: c.activePath,
               filterNodes: c.tagMatchIds,
-              previewHiddenIds: c.shareModePreviewIds,
             })
           }
           linkColor={(link) =>
@@ -246,28 +196,16 @@ export const MobileGraphView = ({
           linkLineDash={(link) => linkLineDashFor(link as GLink)}
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
-          linkCanvasObject={(link, ctx, globalScale) =>
-            drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
-          }
-          onNodeClick={(node) => (c.shareMode ? c.toggleShareModeContact(String(node.id)) : selectAndShowCard(String(node.id)))}
+          linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}
+          onNodeClick={(node) => selectAndShowCard(String(node.id))}
           onBackgroundClick={() => {
             if (activeSheet === 'card') closeCardSheet();
           }}
         />
       </div>
 
-      {/* TOP-LEFT CORNER: Search & Add Person & View Switcher */}
+      {/* TOP-LEFT: search and add person */}
       <div style={{ position: 'absolute', top: 'max(12px, env(safe-area-inset-top, 12px))', left: 'max(12px, env(safe-area-inset-left, 12px))', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 25 }}>
-        {onSwitchToColumns && (
-          <button
-            style={{ ...cornerButtonStyle, background: 'rgba(61, 139, 255, 0.18)', borderColor: '#3d8bff', color: '#6ab0ff' }}
-            onClick={onSwitchToColumns}
-            aria-label="Switch to Miller Columns"
-            title="Columns View"
-          >
-            <ColumnsIcon size={20} />
-          </button>
-        )}
         <button style={cornerButtonStyle} onClick={() => setActiveSheet('search')} aria-label="Search" title="Search">
           <SearchIcon size={20} />
           {c.tagMatchIds && <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '4px', background: '#3d8bff' }} />}
@@ -277,7 +215,7 @@ export const MobileGraphView = ({
         </button>
       </div>
 
-      {/* TOP-RIGHT CORNER: User Identity, Share requests, Settings */}
+      {/* TOP-RIGHT: your profile and settings */}
       <div style={{ position: 'absolute', top: 'max(12px, env(safe-area-inset-top, 12px))', right: 'max(12px, env(safe-area-inset-right, 12px))', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 25 }}>
         <button
           style={{ ...cornerButtonStyle, borderColor: '#3d8bff', color: '#6ab0ff', fontWeight: 'bold', fontSize: '15px' }}
@@ -285,39 +223,14 @@ export const MobileGraphView = ({
           aria-label="My Profile"
           title="My Profile"
         >
-          {currentUser.firstName ? currentUser.firstName[0].toUpperCase() : 'U'}
-        </button>
-        <button style={cornerButtonStyle} onClick={() => setActiveSheet('notifications')} aria-label="Share requests" title="Share requests">
-          <MailboxIcon size={20} />
-          {c.pendingIncomingCount > 0 && (
-            <span
-              style={{
-                position: 'absolute',
-                top: 2,
-                right: 2,
-                minWidth: 16,
-                height: 16,
-                padding: '0 4px',
-                borderRadius: '8px',
-                background: '#ff6b6b',
-                color: '#fff',
-                fontSize: '10px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {c.pendingIncomingCount}
-            </span>
-          )}
+          {selfInitial}
         </button>
         <button style={cornerButtonStyle} onClick={() => setActiveSheet('settings')} aria-label="Settings" title="Settings">
           <SettingsIcon size={20} />
         </button>
       </div>
 
-      {/* ACTIVE PATH FLOATING BANNER */}
+      {/* ACTIVE PATH BANNER */}
       {c.activePath && (
         <div
           style={{
@@ -362,7 +275,7 @@ export const MobileGraphView = ({
         </div>
       )}
 
-      {/* Path chip if active (bottom-left) */}
+      {/* Path chip (bottom-left) */}
       {c.activePath !== null && (
         <div style={{ position: 'absolute', bottom: 'max(16px, env(safe-area-inset-bottom, 16px))', left: 'max(16px, env(safe-area-inset-left, 16px))', zIndex: 25 }}>
           <button
@@ -374,7 +287,7 @@ export const MobileGraphView = ({
         </div>
       )}
 
-      {/* BOTTOM-RIGHT CORNER: Navigation HUD (Locate, Zoom In, Zoom Out, Global Zoom) */}
+      {/* BOTTOM-RIGHT: navigation */}
       <div style={{ position: 'absolute', bottom: 'max(16px, env(safe-area-inset-bottom, 16px))', right: 'max(16px, env(safe-area-inset-right, 16px))', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', zIndex: 25 }}>
         <button style={cornerButtonStyle} onClick={() => c.handleLocateMe()} aria-label="Locate Me" title="Locate Me">
           <TargetIcon size={20} />
@@ -399,7 +312,7 @@ export const MobileGraphView = ({
         </div>
       )}
 
-      {/* Search overlay */}
+      {/* Search */}
       <BottomSheet open={activeSheet === 'search'} onClose={() => setActiveSheet(null)} title="Search">
         <div style={{ display: 'flex', marginBottom: '10px' }}>
           <SearchModeToggle mode={c.searchMode} onChange={c.setSearchMode} modes={GRAPH_SEARCH_MODES} size="md" />
@@ -434,7 +347,6 @@ export const MobileGraphView = ({
               onClick={() => {
                 focusAndShowCard(n.id);
                 c.setSearchTerm('');
-                setActiveSheet('card');
               }}
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '12px 6px', minHeight: 48, background: 'none', border: 'none', borderBottom: '1px solid #2c2c2e', color: '#f0f0f0', cursor: 'pointer' }}
             >
@@ -448,41 +360,8 @@ export const MobileGraphView = ({
         </div>
       </BottomSheet>
 
-      {/* Share requests (F4) */}
-      <BottomSheet open={activeSheet === 'notifications'} onClose={() => setActiveSheet(null)} title="Share requests">
-        <ShareRequestsPanel
-          shareRequests={c.shareRequests}
-          placeholders={c.ownContacts.filter((n) => n.kind === 'PLACEHOLDER')}
-          onSend={c.handleSendShareRequest}
-          onRespond={c.handleRespondToShareRequest}
-          onCancel={c.handleCancelShareRequest}
-          isBusy={c.isActionPending}
-        />
-      </BottomSheet>
-
-      {/* Settings sheet */}
+      {/* Settings */}
       <BottomSheet open={activeSheet === 'settings'} onClose={() => setActiveSheet(null)} title="Settings">
-        {onSwitchToColumns && (
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Interface View</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="button" style={tabButtonStyle(true)} title="Interactive Graph View">
-                <GridIcon size={14} style={{ marginRight: 6 }} /> Graph
-              </button>
-              <button
-                type="button"
-                style={tabButtonStyle(false)}
-                onClick={() => {
-                  setActiveSheet(null);
-                  onSwitchToColumns();
-                }}
-                title="Traditional Miller Columns View"
-              >
-                <ColumnsIcon size={14} style={{ marginRight: 6 }} /> Columns
-              </button>
-            </div>
-          </div>
-        )}
         <button
           type="button"
           onClick={() => {
@@ -491,36 +370,22 @@ export const MobileGraphView = ({
           }}
           style={{ ...fabActionStyle, width: '100%', borderColor: '#3a3a40', color: '#6ab0ff', background: 'rgba(61, 139, 255, 0.12)' }}
         >
-          Refresh Graph Now
+          Reload graph
         </button>
-        <div style={{ borderTop: '1px solid #3a3a40', marginTop: '14px', paddingTop: '14px' }}>
-          <SharingSettingsPanel
-            shares={c.shares}
-            selfProfile={c.selfProfile}
-            onEditShare={(share) => {
-              c.enterShareMode(share);
-              setActiveSheet(null);
-            }}
-            onOpenOtherGraph={(share) => {
-              c.openOtherGraph(share);
-              setActiveSheet(null);
-            }}
-            onRemoveOtherGraph={c.removeOtherGraph}
-            onUpdatePrivacy={c.handleUpdatePrivacy}
-            isBusy={c.isActionPending}
-          />
-        </div>
-        <a
-          href="/instructions"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ ...fabActionStyle, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: '10px', width: '100%', boxSizing: 'border-box', borderColor: '#3a3a40', color: '#f0f0f0', background: '#2c2c2e' }}
+        <button
+          type="button"
+          onClick={() => setActiveSheet('help')}
+          style={{ ...fabActionStyle, width: '100%', marginTop: '10px' }}
         >
-          📖 Instructions & Guide
-        </a>
+          How it works
+        </button>
       </BottomSheet>
 
-      {/* Add person sheet */}
+      <BottomSheet open={activeSheet === 'help'} onClose={() => setActiveSheet(null)} title="How it works" maxHeight="85dvh">
+        <Instructions />
+      </BottomSheet>
+
+      {/* Add person */}
       <BottomSheet open={activeSheet === 'addPerson'} onClose={() => setActiveSheet(null)} title="Add Person" maxHeight="85dvh">
         <AddPersonForm
           onImportContacts={c.handleImportContacts}
@@ -535,7 +400,7 @@ export const MobileGraphView = ({
         />
       </BottomSheet>
 
-      {/* Selected-contact card */}
+      {/* Selected contact */}
       <BottomSheet open={activeSheet === 'card' && selected !== null} onClose={closeCardSheet}>
         {selected && (
           <>
@@ -568,64 +433,29 @@ export const MobileGraphView = ({
         )}
       </BottomSheet>
 
-      {/* Path breadcrumb */}
-      <BottomSheet open={activeSheet === 'path' && c.activePath !== null} onClose={closePathSheet} title="Path Details">
+      {/* Path details */}
+      <BottomSheet open={activeSheet === 'path' && c.activePath !== null} onClose={() => setActiveSheet(null)} title="Path Details">
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
           {c.pathBreadcrumb.map((hop) => (
-            <div key={hop.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
-              <button
-                onClick={() => selectAndShowCard(hop.id)}
-                style={{ background: 'none', border: 'none', color: '#6ab0ff', textDecoration: 'underline', padding: '4px 0', minHeight: 32, fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
-              >
-                {contactFullName(hop)}
-              </button>
-            </div>
+            <button
+              key={hop.id}
+              onClick={() => selectAndShowCard(hop.id)}
+              style={{ background: 'none', border: 'none', color: '#6ab0ff', textDecoration: 'underline', padding: '4px 0', minHeight: 32, fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
+            >
+              {contactFullName(hop)}
+            </button>
           ))}
         </div>
-        <button style={{ ...fabActionStyle, marginTop: '10px', width: '100%', minHeight: 38, fontSize: '13px' }} onClick={() => { c.handleClearPath(); setActiveSheet(null); }}>
+        <button
+          style={{ ...fabActionStyle, marginTop: '10px', width: '100%', minHeight: 38, fontSize: '13px' }}
+          onClick={() => {
+            c.handleClearPath();
+            setActiveSheet(null);
+          }}
+        >
           Clear path
         </button>
       </BottomSheet>
-
-      {/* F5: interactive share-mode panel, while editing what a viewer sees */}
-      {c.shareMode && (
-        <div
-          style={{
-            position: 'fixed',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 45,
-            background: 'rgba(28, 28, 30, 0.96)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            borderTop: '1px solid #3a3a40',
-            borderRadius: '16px 16px 0 0',
-            maxHeight: '60dvh',
-            overflowY: 'auto',
-          }}
-        >
-          <ShareModePanel
-            shareMode={c.shareMode}
-            onToggleFlag={c.setShareModeFlag}
-            onSave={c.saveShareMode}
-            onCancel={c.cancelShareMode}
-            onRevoke={() => c.revokeShare(c.shareMode!.shareId)}
-            isBusy={c.isActionPending}
-          />
-        </div>
-      )}
-
-      {/* F6: read-only view of a graph shared with you */}
-      {c.viewingShare && (
-        <OtherGraphView
-          share={c.viewingShare}
-          data={c.viewingForceGraphData}
-          loading={c.viewingGraphLoading}
-          error={c.viewingGraphError}
-          onClose={c.closeOtherGraph}
-        />
-      )}
     </div>
   );
 };

@@ -1,139 +1,57 @@
 import { describe, expect, it } from 'vitest';
-import type { Graph, GraphNode } from '../services/graphService';
-import { applyShareModePreview, contactFullName, displayLabelFor, graphToForceGraphData } from './mapping';
+import type { Graph } from '../services/graphService';
+import { graphToForceGraphData, contactFullName } from './mapping';
+import { linkDistanceFor, type GLink } from './rendering';
 
-const baseNode: Omit<GraphNode, 'id' | 'kind' | 'firstName' | 'lastName'> = {
-  about: '',
-  phoneNumber: null,
-  tags: [],
-  note: '',
-  profile: null,
-  linkedUserId: null,
-  source: null,
-  editable: true,
+const graph: Graph = {
+  nodes: [
+    { id: 'self', kind: 'SELF', firstName: 'Me', lastName: '', about: '', phoneNumber: null, tags: [], note: '', strength: 5, editable: true },
+    { id: 'a', kind: 'PLACEHOLDER', firstName: 'Ann', lastName: 'Apple', about: '', phoneNumber: '+1 555-000-0001', tags: [], note: '', strength: 4, editable: true },
+  ],
+  edges: [
+    { source: 'self', target: 'a', kind: 'DIRECT' },
+    { source: 'a', target: 'a', kind: 'LINK' },
+  ],
 };
 
 describe('graphToForceGraphData', () => {
-  it('maps nodes and edges 1:1, carrying kind/editable/sharer metadata', () => {
-    const graph: Graph = {
-      nodes: [
-        { ...baseNode, id: 'self', kind: 'SELF', firstName: 'You', lastName: '' },
-        { ...baseNode, id: 'c1', kind: 'PLACEHOLDER', firstName: 'Dana', lastName: 'Price', phoneNumber: '+15551234567' },
-        {
-          ...baseNode,
-          id: 'c2',
-          kind: 'REGISTERED',
-          firstName: 'Casey',
-          lastName: 'Nguyen',
-          editable: false,
-          source: { shareId: 'share-1', sharerUserId: 'u-sam', sharerName: 'Sam Rivera' },
-        },
-      ],
-      edges: [
-        { source: 'self', target: 'c1', kind: 'DIRECT', shareId: null },
-        { source: 'self', target: 'c2', kind: 'SHARED', shareId: 'share-1' },
-      ],
-    };
-
+  it('maps every node and edge, carrying kind, name, strength and phone', () => {
     const data = graphToForceGraphData(graph);
-
-    expect(data.nodes).toHaveLength(3);
-    expect(data.links).toHaveLength(2);
-
-    const self = data.nodes.find((n) => n.id === 'self')!;
-    expect(self.kind).toBe('SELF');
-    expect(self.val).toBeGreaterThan(data.nodes.find((n) => n.id === 'c1')!.val);
-
-    const c1 = data.nodes.find((n) => n.id === 'c1')!;
-    expect(c1.name).toBe('Dana Price');
-    expect(c1.phoneNumber).toBe('+15551234567');
-    expect(c1.editable).toBe(true);
-    expect(c1.sharerName).toBeNull();
-
-    const c2 = data.nodes.find((n) => n.id === 'c2')!;
-    expect(c2.editable).toBe(false);
-    expect(c2.sharerName).toBe('Sam Rivera');
-    expect(c2.name).toBe('Casey Nguyen (via Sam Rivera)');
-
+    expect(data.nodes.map((n) => [n.id, n.kind, n.name, n.strength])).toEqual([
+      ['self', 'SELF', 'Me', 5],
+      ['a', 'PLACEHOLDER', 'Ann Apple', 4],
+    ]);
+    expect(data.nodes[1].phoneNumber).toBe('+1 555-000-0001');
     expect(data.links).toEqual([
-      { source: 'self', target: 'c1', kind: 'DIRECT', shareId: null },
-      { source: 'self', target: 'c2', kind: 'SHARED', shareId: 'share-1' },
+      { source: 'self', target: 'a', kind: 'DIRECT' },
+      { source: 'a', target: 'a', kind: 'LINK' },
     ]);
   });
 });
 
 describe('contactFullName', () => {
-  it('trims a missing last name', () => {
-    expect(contactFullName({ firstName: 'You', lastName: '' })).toBe('You');
+  it('trims the outer whitespace and joins names, skipping an empty last name', () => {
+    expect(contactFullName({ firstName: 'Ann', lastName: '' })).toBe('Ann');
+    expect(contactFullName({ firstName: ' Ann ', lastName: 'Apple ' })).toBe('Ann  Apple');
   });
 });
 
-describe('applyShareModePreview', () => {
-  const graph: Graph = {
-    nodes: [
-      { ...baseNode, id: 'self', kind: 'SELF', firstName: 'Blake', lastName: 'Rivera' },
-      { ...baseNode, id: 'c1', kind: 'PLACEHOLDER', firstName: 'Jordan', lastName: 'Park' },
-      { ...baseNode, id: 'c2', kind: 'REGISTERED', firstName: 'Casey', lastName: 'Moore', linkedUserId: 'u-casey' },
-      { ...baseNode, id: 'c3', kind: 'REGISTERED', firstName: 'Avery', lastName: 'Stone', linkedUserId: 'u-avery' },
-    ],
-    edges: [
-      { source: 'self', target: 'c1', kind: 'DIRECT', shareId: null },
-      { source: 'self', target: 'c2', kind: 'DIRECT', shareId: null },
-      { source: 'self', target: 'c3', kind: 'DIRECT', shareId: null },
-    ],
-  };
-  const data = graphToForceGraphData(graph);
-  // A layout would have already stamped x/y (and possibly fx/fy) directly onto these node
-  // objects before a preview is ever computed — simulate that here.
-  data.nodes.forEach((n, i) => {
-    (n as unknown as { x: number; y: number }).x = i * 10;
-    (n as unknown as { x: number; y: number }).y = i * 20;
+describe('linkDistanceFor', () => {
+  const direct = (strength: number): GLink =>
+    ({ kind: 'DIRECT', source: { id: 'self' }, target: { id: 'a', strength } } as unknown as GLink);
+
+  it('places stronger contacts closer to you', () => {
+    expect(linkDistanceFor(direct(5))).toBeLessThan(linkDistanceFor(direct(3)));
+    expect(linkDistanceFor(direct(3))).toBeLessThan(linkDistanceFor(direct(1)));
   });
 
-  it('never returns a new nodes/links structure — same node object identity and positions', () => {
-    const before = data.nodes.map((n) => ({ ...n }));
-    applyShareModePreview(data, new Set(['c1']), new Set(['c2']));
-    // The function must not mutate or replace anything on `data` itself.
-    expect(data.nodes).toEqual(before);
-    data.nodes.forEach((n, i) => {
-      expect((n as unknown as { x: number }).x).toBe(i * 10);
-      expect((n as unknown as { y: number }).y).toBe(i * 20);
-    });
+  it('falls back to a medium distance when the target is not resolved yet', () => {
+    const unresolved = { kind: 'DIRECT', source: 'self', target: 'a' } as unknown as GLink;
+    expect(linkDistanceFor(unresolved)).toBe(linkDistanceFor(direct(3)));
   });
 
-  it('returns exactly the hidden ∪ locked ids that exist among the nodes', () => {
-    const preview = applyShareModePreview(data, new Set(['c1']), new Set(['c2', 'c3']));
-    expect(preview).toEqual(new Set(['c1', 'c2', 'c3']));
-  });
-
-  it('drops hidden/locked ids that no longer correspond to a node', () => {
-    const preview = applyShareModePreview(data, new Set(['c1', 'ghost']), new Set());
-    expect(preview).toEqual(new Set(['c1']));
-  });
-
-  it('every link endpoint id still exists in the (unchanged) node set after computing a preview', () => {
-    applyShareModePreview(data, new Set(['c1']), new Set(['c2']));
-    const nodeIds = new Set(data.nodes.map((n) => n.id));
-    data.links.forEach((l) => {
-      expect(nodeIds.has(l.source)).toBe(true);
-      expect(nodeIds.has(l.target)).toBe(true);
-    });
-  });
-});
-
-describe('displayLabelFor', () => {
-  it('never adds a sharer suffix for a HIDDEN node', () => {
-    const hidden: GraphNode = { ...baseNode, id: 'h1', kind: 'HIDDEN', firstName: 'Hidden', lastName: 'User', source: { shareId: 's', sharerUserId: 'u', sharerName: 'Sam' } };
-    expect(displayLabelFor(hidden)).toBe('Hidden User');
-  });
-
-  it('adds "via {sharerName}" for a shared, non-hidden node', () => {
-    const shared: GraphNode = { ...baseNode, id: 'c2', kind: 'PLACEHOLDER', firstName: 'Casey', lastName: 'Nguyen', source: { shareId: 's', sharerUserId: 'u', sharerName: 'Sam Rivera' } };
-    expect(displayLabelFor(shared)).toBe('Casey Nguyen (via Sam Rivera)');
-  });
-
-  it('plain name for your own contact', () => {
-    const mine: GraphNode = { ...baseNode, id: 'c1', kind: 'PLACEHOLDER', firstName: 'Dana', lastName: 'Price' };
-    expect(displayLabelFor(mine)).toBe('Dana Price');
+  it('uses a fixed distance for links between two contacts', () => {
+    const link = { kind: 'LINK', source: { id: 'a', strength: 5 }, target: { id: 'b', strength: 1 } } as unknown as GLink;
+    expect(linkDistanceFor(link)).toBe(45);
   });
 });

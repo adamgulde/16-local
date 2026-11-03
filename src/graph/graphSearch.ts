@@ -1,9 +1,15 @@
 import type { Graph, GraphNode } from '../services/graphService';
-import type { TagCriteria } from '../services/userService';
 import { buildTagIndex, type TagIndex } from '../utils/tagTree';
 import { contactFullName } from './mapping';
 
 export type GraphSearchMode = 'names' | 'tags' | 'about' | 'notes';
+
+/** Tag filter for tags-mode search: dictionary subtrees and/or free-text labels. */
+export interface TagCriteria {
+  tagIds: string[];
+  labels: string[];
+  matchAll: boolean;
+}
 
 // The "nothing picked yet" tags-mode criteria — shared by the tag picker and the graph controller.
 export const EMPTY_TAG_CRITERIA: TagCriteria = { tagIds: [], labels: [], matchAll: true };
@@ -22,7 +28,7 @@ export const GRAPH_SEARCH_PLACEHOLDERS: Record<GraphSearchMode, string> = {
   notes: 'Search your private notes…',
 };
 
-// Undirected adjacency over every edge kind (DIRECT, LINK, SHARED) — client-side find-path and
+// Undirected adjacency over every edge kind (DIRECT, LINK) — client-side find-path and
 // neighbor highlighting both traverse the graph exactly as drawn, regardless of edge kind.
 export const buildAdjacency = (graph: Graph): Map<string, Set<string>> => {
   const adjacency = new Map<string, Set<string>>();

@@ -4,8 +4,8 @@ import {
   patchContact,
   deleteContact as deleteContactRow,
   upsertNote,
-  linkContacts,
-  unlinkContacts,
+  linkContacts as linkContactRows,
+  unlinkContacts as unlinkContactRows,
   importContacts as importContactRows,
 } from '../data/contacts';
 import type { ContactInput, GraphNode, ImportResult } from '../data/types';
@@ -27,9 +27,9 @@ export const deleteContact = (id: string): Promise<void> => deleteContactRow(db(
 
 export const putContactNote = (id: string, content: string): Promise<void> => upsertNote(db(), id, content);
 
-export const linkContactPair = (a: string, b: string): Promise<void> => linkContacts(db(), a, b);
+export const linkContacts = (a: string, b: string): Promise<void> => linkContactRows(db(), a, b);
 
-export const unlinkContactPair = (a: string, b: string): Promise<void> => unlinkContacts(db(), a, b);
+export const unlinkContacts = (a: string, b: string): Promise<void> => unlinkContactRows(db(), a, b);
 
 /**
  * Creates placeholders from an address-book import, chunked. `onProgress` gets the number of

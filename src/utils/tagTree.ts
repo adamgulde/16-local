@@ -36,7 +36,7 @@ export const buildTagIndex = (tags: Tag[]): TagIndex => {
 export const searchTags = (
   index: TagIndex,
   query: string,
-  { withinId, include }: { withinId?: string | null; include: (tag: Tag) => boolean }
+  { withinId, include = () => true }: { withinId?: string | null; include?: (tag: Tag) => boolean }
 ): Tag[] => {
   const q = query.trim().toLowerCase();
   if (!q) return [];

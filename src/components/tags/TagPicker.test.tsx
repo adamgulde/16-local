@@ -15,11 +15,10 @@ const node = (id: string, label: string, parentId: string | null, extra: Partial
   fullPath: label,
   hasChildren: false,
   selectable: parentId !== null,
-  selfOnly: false,
   ...extra,
 });
 
-// Personal Interests > Music > Jazz ; Education > Major > Music ; Age Range {self} > 30–39
+// Personal Interests > Music > Jazz ; Education > Major > Music ; Age Range > 30–39
 const TAGS: Tag[] = [
   node('interests', 'Personal Interests', null, { hasChildren: true, icon: 'heart' }),
   node('music', 'Music', 'interests', { hasChildren: true, fullPath: 'Personal Interests › Music' }),
@@ -27,8 +26,8 @@ const TAGS: Tag[] = [
   node('education', 'Education', null, { hasChildren: true }),
   node('major', 'Major', 'education', { hasChildren: true }),
   node('music-major', 'Music', 'major', { fullPath: 'Education › Major › Music' }),
-  node('age', 'Age Range', null, { hasChildren: true, selfOnly: true }),
-  node('age30', '30–39', 'age', { selfOnly: true }),
+  node('age', 'Age Range', null, { hasChildren: true }),
+  node('age30', '30–39', 'age', {}),
 ];
 
 const renderPicker = (props: Partial<Parameters<typeof TagPicker>[0]> = {}) => {
@@ -73,10 +72,6 @@ describe('TagPicker', () => {
     expect(screen.getByRole('tab', { name: /Personal Interests/ })).toHaveAttribute('aria-selected', 'false');
   });
 
-  it('hides self-only categories when tagging someone else', () => {
-    renderPicker({ excludeSelfOnly: true });
-    expect(screen.queryByRole('tab', { name: /Age Range/ })).not.toBeInTheDocument();
-  });
 
   it('offers a custom tag only once a category is chosen when one is required', () => {
     const onCreateCustom = vi.fn();

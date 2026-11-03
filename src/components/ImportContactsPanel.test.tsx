@@ -12,9 +12,7 @@ const existingSam: GraphNode = {
   phoneNumber: '+1 555-000-0001',
   tags: [],
   note: '',
-  profile: null,
-  linkedUserId: null,
-  source: null,
+  strength: 3 as const,
   editable: true,
 };
 

@@ -52,7 +52,13 @@ export const buildGraph = async (d: Db): Promise<Graph> => {
 };
 
 /** Your own name and about text. */
-export const getSelfProfile = async (d: Db): Promise<{ firstName: string; lastName: string; about: string }> => {
+export interface SelfProfile {
+  firstName: string;
+  lastName: string;
+  about: string;
+}
+
+export const getSelfProfile = async (d: Db): Promise<SelfProfile> => {
   const [row] = await d.all<{ first_name: string; last_name: string; about: string }>(
     'SELECT first_name, last_name, about FROM self_profile WHERE id = 1'
   );
@@ -61,10 +67,10 @@ export const getSelfProfile = async (d: Db): Promise<{ firstName: string; lastNa
 
 export const updateSelfProfile = async (
   d: Db,
-  patch: { firstName?: string; lastName?: string; about?: string }
+  patch: Partial<SelfProfile>
 ): Promise<void> => {
   const current = await getSelfProfile(d);
-  const next = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
+  const next: SelfProfile = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
   await d.run('UPDATE self_profile SET first_name = ?, last_name = ?, about = ? WHERE id = 1', [
     next.firstName.trim(),
     next.lastName.trim(),

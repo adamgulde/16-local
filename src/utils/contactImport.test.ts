@@ -19,9 +19,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   phoneNumber: null,
   tags: [],
   note: '',
-  profile: null,
-  linkedUserId: null,
-  source: null,
+  strength: 3 as const,
   editable: true,
   ...over,
 });
@@ -115,7 +113,7 @@ describe('toCandidates', () => {
 });
 
 describe('findExistingCandidates', () => {
-  it('matches by phone when there is one, otherwise by full name, ignoring shared nodes', () => {
+  it('matches by phone when there is one, otherwise by full name', () => {
     const candidates = toCandidates(
       [
         { given: 'New', family: 'Name', phones: [{ number: '(555) 000-0050' }] },
@@ -128,7 +126,6 @@ describe('findExistingCandidates', () => {
     const existing = findExistingCandidates(candidates, [
       node({ firstName: 'Old', phoneNumber: '+1 555-000-0050' }),
       node({ firstName: 'Sam', lastName: 'Smith' }),
-      node({ firstName: 'Shared', lastName: 'Person', source: { shareId: 's', sharerUserId: 'u', sharerName: 'X' } }),
     ]);
     const names = candidates.filter((c) => existing.has(c.key)).map((c) => c.firstName);
     expect(names.sort()).toEqual(['New', 'sam']);

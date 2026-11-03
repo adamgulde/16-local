@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import type { User } from '../services/userService';
 import { useGraphController } from '../graph/useGraphController';
 import { contactFullName } from '../graph/mapping';
 import { GRAPH_SEARCH_MODES, GRAPH_SEARCH_PLACEHOLDERS } from '../graph/graphSearch';
@@ -18,33 +17,12 @@ import type { GNode, GLink } from '../graph/rendering';
 import { ContactCard } from './ContactCard';
 import { AddPersonForm } from './AddPersonForm';
 import { DraggableCard } from './DraggableCard';
-import { ShareRequestsPanel } from './ShareRequestsPanel';
-import { SharingSettingsPanel } from './SharingSettingsPanel';
-import { ShareModePanel } from './ShareModePanel';
-import { OtherGraphView } from './OtherGraphView';
+import { Instructions } from './Instructions';
 import { formatPhoneNumberDisplay } from '../utils/phoneUtils';
-import {
-  SearchIcon,
-  MailboxIcon,
-  SettingsIcon,
-  TargetIcon,
-  PlusIcon,
-  MinusIcon,
-  MaximizeIcon,
-  CloseIcon,
-  ColumnsIcon,
-  GridIcon,
-} from './Icons';
+import { SearchIcon, SettingsIcon, TargetIcon, PlusIcon, MinusIcon, MaximizeIcon, CloseIcon } from './Icons';
 import { SearchModeToggle } from './tags/SearchModeToggle';
 import { TagQueryField, type TagQueryFieldHandle } from './tags/TagQueryField';
 import { pickerRows } from './tags/tagTheme';
-
-interface GraphContainerProps {
-  currentUser: User;
-  onSwitchToColumns?: () => void;
-  initialFocusUserId?: string | null;
-  initialFindPathTargetId?: string | null;
-}
 
 const ZOOM_STEP_FACTOR = 1.6;
 
@@ -74,35 +52,27 @@ const hudBtnStyle: CSSProperties = {
   transition: 'background 0.2s',
 };
 
-export const GraphContainer = ({
-  currentUser,
-  onSwitchToColumns,
-  initialFocusUserId,
-  initialFindPathTargetId,
-}: GraphContainerProps) => {
+export const GraphContainer = () => {
   const fgRef = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const c = useGraphController(fgRef);
   const hasOrientedRef = useRef(false);
   const tagQueryRef = useRef<TagQueryFieldHandle>(null);
   const [graphReady, setGraphReady] = useState(false);
 
-  // The engine first stops once the static layout is final (see STATIC_LAYOUT). Only then is the
-  // camera placed — instantly — and the canvas revealed, so nothing moves when the graph appears.
+  // The engine stops once the static layout is final. Only then is the camera placed (instantly) and
+  // the canvas revealed, so nothing moves when the graph appears.
   const handleEngineStop = () => {
     if (hasOrientedRef.current) return;
     hasOrientedRef.current = true;
-    if (initialFocusUserId) c.focusUser(initialFocusUserId, 0);
-    else if (initialFindPathTargetId) c.handleFindPath(initialFindPathTargetId);
-    else c.handleLocateMe(0);
+    c.handleLocateMe(0);
     setGraphReady(true);
   };
 
   const graphResizeObserverRef = useRef<ResizeObserver | null>(null);
   const [graphSize, setGraphSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-  // Floating Popover UI states
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [frontCard, setFrontCard] = useState<'user' | 'path' | 'add'>('user');
 
@@ -141,10 +111,12 @@ export const GraphContainer = ({
   }
 
   const selected = c.selectedNode;
+  const selfName = c.selfProfile ? contactFullName(c.selfProfile) : '';
+  const selfInitial = c.selfProfile?.firstName?.[0] ?? 'M';
 
   return (
     <div ref={graphWrapperRef} style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#121214' }}>
-      {/* 100% Viewport Canvas, hidden until laid out and centered */}
+      {/* Full-viewport canvas, hidden until laid out and centred */}
       <div style={{ visibility: graphReady ? 'visible' : 'hidden' }}>
         <ForceGraph2D<GNode, GLink>
           ref={fgRef}
@@ -162,7 +134,6 @@ export const GraphContainer = ({
               highlightNodes: c.highlightNodes,
               activePath: c.activePath,
               filterNodes: c.tagMatchIds,
-              previewHiddenIds: c.shareModePreviewIds,
             })
           }
           linkColor={(link) =>
@@ -175,19 +146,16 @@ export const GraphContainer = ({
           linkLineDash={(link) => linkLineDashFor(link as GLink)}
           nodePointerAreaPaint={paintNodePointerArea}
           linkCanvasObjectMode={() => 'after'}
-          linkCanvasObject={(link, ctx, globalScale) =>
-            drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)
-          }
-          onNodeClick={(node) => (c.shareMode ? c.toggleShareModeContact(String(node.id)) : c.selectNode(String(node.id)))}
+          linkCanvasObject={(link, ctx, globalScale) => drawPathArrow(link as GLink, ctx, globalScale, c.pathLinkTarget)}
+          onNodeClick={(node) => c.selectNode(String(node.id))}
           onBackgroundClick={() => {
             c.clearSelection();
-            setShowNotifications(false);
             setShowSettings(false);
           }}
         />
       </div>
 
-      {/* Floating Top Bar */}
+      {/* Floating top bar */}
       <header
         style={{
           position: 'absolute',
@@ -201,64 +169,7 @@ export const GraphContainer = ({
           pointerEvents: 'none',
         }}
       >
-        {/* View Switcher Pill */}
-        {onSwitchToColumns && (
-          <div
-            style={{
-              ...floatingPanelStyle,
-              pointerEvents: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '3px',
-              gap: '2px',
-            }}
-          >
-            <button
-              type="button"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: '#3d8bff',
-                color: '#fff',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'default',
-              }}
-              title="Graph View (Active)"
-            >
-              <GridIcon size={14} />
-              Graph
-            </button>
-            <button
-              type="button"
-              onClick={onSwitchToColumns}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'transparent',
-                color: '#9a9a9a',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-              title="Switch to Columns View"
-            >
-              <ColumnsIcon size={14} />
-              Columns
-            </button>
-          </div>
-        )}
-
-        {/* Search bar: one mode at a time. Tags mode swaps the text input for tag tokens and
-            opens the tag picker, whose width is capped at the bar's own width. */}
+        {/* Search bar: one mode at a time. Tags mode swaps the text input for tag tokens. */}
         <div style={{ ...floatingPanelStyle, pointerEvents: 'auto', padding: '6px 8px 6px 12px', display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', minWidth: '360px', maxWidth: '520px', flex: '1 1 auto', fontSize: '14px' }}>
           <SearchIcon size={18} color="#9a9a9a" style={{ flexShrink: 0 }} />
           {c.searchMode === 'tags' ? (
@@ -302,15 +213,7 @@ export const GraphContainer = ({
               }}
               onFocus={() => c.setShowSuggestions(true)}
               onBlur={() => c.setShowSuggestions(false)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: '#f0f0f0',
-                fontSize: '14px',
-                flex: 1,
-                minWidth: '100px',
-              }}
+              style={{ background: 'transparent', border: 'none', outline: 'none', color: '#f0f0f0', fontSize: '14px', flex: 1, minWidth: '100px' }}
             />
           )}
           <SearchModeToggle mode={c.searchMode} onChange={c.setSearchMode} modes={GRAPH_SEARCH_MODES} />
@@ -319,16 +222,7 @@ export const GraphContainer = ({
           {c.searchMode !== 'tags' && c.showSuggestions && c.searchMatches.length > 0 && (
             <div
               onMouseDown={(e) => e.preventDefault()}
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                left: 0,
-                right: 0,
-                ...floatingPanelStyle,
-                maxHeight: '260px',
-                overflowY: 'auto',
-                zIndex: 30,
-              }}
+              style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, ...floatingPanelStyle, maxHeight: '260px', overflowY: 'auto', zIndex: 30 }}
             >
               {c.searchMatches.map((n) => (
                 <button
@@ -338,20 +232,7 @@ export const GraphContainer = ({
                     c.handleSelectSearchResult(n.id);
                     c.setShowSuggestions(false);
                   }}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    width: '100%',
-                    padding: '10px 14px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    color: '#f0f0f0',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '10px 14px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#f0f0f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
                 >
                   <span style={{ fontWeight: 500 }}>{contactFullName(n)}</span>
                   {n.phoneNumber && <span style={{ color: '#9a9a9a', fontSize: '11px' }}>{formatPhoneNumberDisplay(n.phoneNumber)}</span>}
@@ -370,187 +251,68 @@ export const GraphContainer = ({
             setShowAddPerson(true);
             setFrontCard('add');
           }}
-          style={{
-            ...floatingPanelStyle,
-            pointerEvents: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 14px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: 600,
-          }}
+          style={{ ...floatingPanelStyle, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
         >
           <PlusIcon size={14} /> Add person
         </button>
 
-        {/* User Identity pill */}
+        {/* Your identity pill: focuses your own node */}
         <button
           onClick={() => c.selfNode && c.focusUser(c.selfNode.id)}
-          style={{
-            ...floatingPanelStyle,
-            pointerEvents: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 12px',
-            cursor: 'pointer',
-          }}
+          style={{ ...floatingPanelStyle, pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', cursor: 'pointer' }}
         >
-          <div
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: '12px',
-              background: '#3d8bff',
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {currentUser.firstName[0]}
+          <div style={{ width: 24, height: 24, borderRadius: '12px', background: '#3d8bff', color: 'white', fontWeight: 'bold', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {selfInitial}
           </div>
-          <span style={{ fontSize: '13px', fontWeight: 500 }}>{currentUser.firstName} {currentUser.lastName}</span>
+          <span style={{ fontSize: '13px', fontWeight: 500 }}>{selfName || 'Me'}</span>
         </button>
 
-        {/* Mailbox / Share requests (F4) */}
+        {/* Settings */}
         <div style={{ pointerEvents: 'auto', position: 'relative' }}>
           <button
-            onClick={() => {
-              setShowNotifications((prev) => !prev);
-              setShowSettings(false);
-            }}
-            aria-label="Share requests"
-            style={{ ...hudBtnStyle, borderColor: showNotifications ? '#3d8bff' : '#3a3a40', position: 'relative' }}
-          >
-            <MailboxIcon size={20} />
-            {c.pendingIncomingCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: -2,
-                  right: -2,
-                  minWidth: 16,
-                  height: 16,
-                  padding: '0 4px',
-                  borderRadius: '8px',
-                  background: '#ff6b6b',
-                  color: '#fff',
-                  fontSize: '10px',
-                  fontWeight: 'bold',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {c.pendingIncomingCount}
-              </span>
-            )}
-          </button>
-          {showNotifications && (
-            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '320px', maxHeight: '70vh', overflowY: 'auto', ...floatingPanelStyle, padding: '14px', zIndex: 35 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '14px' }}>Share requests</span>
-                <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0 }}>
-                  <CloseIcon size={16} />
-                </button>
-              </div>
-              <ShareRequestsPanel
-                shareRequests={c.shareRequests}
-                placeholders={c.ownContacts.filter((n) => n.kind === 'PLACEHOLDER')}
-                onSend={c.handleSendShareRequest}
-                onRespond={c.handleRespondToShareRequest}
-                onCancel={c.handleCancelShareRequest}
-                isBusy={c.isActionPending}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Settings (includes F5/F6/F7 sharing settings) */}
-        <div style={{ pointerEvents: 'auto', position: 'relative' }}>
-          <button
-            onClick={() => {
-              setShowSettings((prev) => !prev);
-              setShowNotifications(false);
-            }}
+            onClick={() => setShowSettings((prev) => !prev)}
             aria-label="Settings"
             style={{ ...hudBtnStyle, borderColor: showSettings ? '#3d8bff' : '#3a3a40' }}
           >
             <SettingsIcon size={20} />
           </button>
           {showSettings && (
-            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '320px', maxHeight: '70vh', overflowY: 'auto', ...floatingPanelStyle, padding: '16px', zIndex: 35 }}>
+            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '280px', ...floatingPanelStyle, padding: '16px', zIndex: 35 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <span style={{ fontWeight: 'bold', fontSize: '15px' }}>Preferences</span>
+                <span style={{ fontWeight: 'bold', fontSize: '15px' }}>Settings</span>
                 <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', padding: 0 }}>
                   <CloseIcon size={16} />
                 </button>
               </div>
-              <div style={{ marginBottom: '14px' }}>
-                <button
-                  type="button"
-                  onClick={() => c.loadData()}
-                  style={{ width: '100%', padding: '6px 10px', background: 'rgba(61, 139, 255, 0.12)', border: '1px solid #3a3a40', borderRadius: '6px', color: '#6ab0ff', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
-                >
-                  Refresh Graph Now
-                </button>
-              </div>
-              <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px', marginBottom: '12px' }}>
-                <SharingSettingsPanel
-                  shares={c.shares}
-                  selfProfile={c.selfProfile}
-                  onEditShare={(share) => {
-                    c.enterShareMode(share);
-                    setShowSettings(false);
-                  }}
-                  onOpenOtherGraph={(share) => {
-                    c.openOtherGraph(share);
-                    setShowSettings(false);
-                  }}
-                  onRemoveOtherGraph={c.removeOtherGraph}
-                  onUpdatePrivacy={c.handleUpdatePrivacy}
-                  isBusy={c.isActionPending}
-                />
-              </div>
-              <div style={{ borderTop: '1px solid #3a3a40', paddingTop: '12px' }}>
-                <a
-                  href="/instructions"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textAlign: 'center', padding: '8px', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#6ab0ff', textDecoration: 'none', fontSize: '13px', fontWeight: 500 }}
-                >
-                  📖 View Instructions & Guide
-                </a>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  c.loadData();
+                  setShowSettings(false);
+                }}
+                style={{ width: '100%', padding: '8px 10px', background: 'rgba(61, 139, 255, 0.12)', border: '1px solid #3a3a40', borderRadius: '6px', color: '#6ab0ff', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
+              >
+                Reload graph
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHelp(true);
+                  setShowSettings(false);
+                }}
+                style={{ width: '100%', marginTop: '10px', padding: '8px 10px', background: '#2c2c2e', border: '1px solid #3a3a40', borderRadius: '6px', color: '#f0f0f0', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
+              >
+                How it works
+              </button>
             </div>
           )}
         </div>
       </header>
 
-      {/* Floating Action Error Toast */}
+      {/* Action error toast */}
       {c.actionError && (
         <div
-          style={{
-            position: 'absolute',
-            top: 72,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            ...floatingPanelStyle,
-            background: 'rgba(58, 20, 20, 0.95)',
-            borderColor: '#ff6b6b',
-            color: '#ff6b6b',
-            padding: '8px 16px',
-            zIndex: 40,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: '13px',
-          }}
+          style={{ position: 'absolute', top: 72, left: '50%', transform: 'translateX(-50%)', ...floatingPanelStyle, background: 'rgba(58, 20, 20, 0.95)', borderColor: '#ff6b6b', color: '#ff6b6b', padding: '8px 16px', zIndex: 40, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}
         >
           <span>{c.actionError}</span>
           <button onClick={() => c.setActionError(null)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer' }}>
@@ -559,7 +321,7 @@ export const GraphContainer = ({
         </div>
       )}
 
-      {/* Floating Add Person card */}
+      {/* Add person card */}
       {showAddPerson && (
         <DraggableCard
           id="add-person-card"
@@ -583,7 +345,7 @@ export const GraphContainer = ({
         </DraggableCard>
       )}
 
-      {/* Floating Selected ContactCard Overlay (Draggable) */}
+      {/* Selected contact card */}
       {selected && (
         <DraggableCard
           id="user-card"
@@ -614,7 +376,7 @@ export const GraphContainer = ({
         </DraggableCard>
       )}
 
-      {/* Floating Active Path Card (Draggable, side-by-side with ContactCard) */}
+      {/* Shortest path card, beside the contact card */}
       {c.activePath && c.pathBreadcrumb.length > 0 && (
         <DraggableCard
           id="path-card"
@@ -648,7 +410,7 @@ export const GraphContainer = ({
         </DraggableCard>
       )}
 
-      {/* Floating HUD Controls in Bottom-Right */}
+      {/* Navigation HUD, bottom right */}
       <div style={{ position: 'absolute', bottom: 24, right: 20, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
         <button onClick={() => c.handleLocateMe()} title="Locate Me" style={hudBtnStyle}>
           <TargetIcon size={18} color="#6ab0ff" />
@@ -664,29 +426,15 @@ export const GraphContainer = ({
         </button>
       </div>
 
-      {/* F5: interactive share-mode panel, while editing what a viewer sees */}
-      {c.shareMode && (
-        <div style={{ position: 'absolute', bottom: 24, left: 20, width: '360px', zIndex: 40, ...floatingPanelStyle }}>
-          <ShareModePanel
-            shareMode={c.shareMode}
-            onToggleFlag={c.setShareModeFlag}
-            onSave={c.saveShareMode}
-            onCancel={c.cancelShareMode}
-            onRevoke={() => c.revokeShare(c.shareMode!.shareId)}
-            isBusy={c.isActionPending}
-          />
+      {showHelp && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ ...floatingPanelStyle, width: 'min(560px, 100%)', maxHeight: '85vh', overflowY: 'auto', padding: 20, position: 'relative' }}>
+            <button onClick={() => setShowHelp(false)} aria-label="Close help" style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer' }}>
+              <CloseIcon size={16} />
+            </button>
+            <Instructions />
+          </div>
         </div>
-      )}
-
-      {/* F6: read-only view of a graph shared with you */}
-      {c.viewingShare && (
-        <OtherGraphView
-          share={c.viewingShare}
-          data={c.viewingForceGraphData}
-          loading={c.viewingGraphLoading}
-          error={c.viewingGraphError}
-          onClose={c.closeOtherGraph}
-        />
       )}
     </div>
   );

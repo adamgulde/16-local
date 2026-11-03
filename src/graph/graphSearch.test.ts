@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Graph, GraphNode } from '../services/graphService';
 import { buildTagIndex } from '../utils/tagTree';
-import type { Tag } from '../services/tagService';
+import type { Tag } from '../data/types';
 import { findPathBFS, searchGraphNodes } from './graphSearch';
 
 const base: Omit<GraphNode, 'id' | 'kind' | 'firstName' | 'lastName'> = {
@@ -9,9 +9,7 @@ const base: Omit<GraphNode, 'id' | 'kind' | 'firstName' | 'lastName'> = {
   phoneNumber: null,
   tags: [],
   note: '',
-  profile: null,
-  linkedUserId: null,
-  source: null,
+  strength: 3 as const,
   editable: true,
 };
 
@@ -28,10 +26,10 @@ const graph: Graph = {
     { ...base, id: 'e', kind: 'PLACEHOLDER', firstName: 'Eve', lastName: 'Estes' },
   ],
   edges: [
-    { source: 'self', target: 'a', kind: 'DIRECT', shareId: null },
-    { source: 'a', target: 'b', kind: 'LINK', shareId: null },
-    { source: 'b', target: 'c', kind: 'DIRECT', shareId: null },
-    { source: 'a', target: 'd', kind: 'DIRECT', shareId: null },
+    { source: 'self', target: 'a', kind: 'DIRECT' },
+    { source: 'a', target: 'b', kind: 'LINK' },
+    { source: 'b', target: 'c', kind: 'DIRECT' },
+    { source: 'a', target: 'd', kind: 'DIRECT' },
   ],
 };
 
@@ -73,8 +71,8 @@ describe('searchGraphNodes', () => {
 
   it('tags mode: matches a tag inside the selected subtree', () => {
     const dictionary: Tag[] = [
-      { id: 'music', category: 'Interests', label: 'Music', parentId: null, level: 1, icon: null, displayOrder: 0, fullPath: 'Interests', hasChildren: true, selectable: false, selfOnly: false },
-      { id: 'jazz', category: 'Interests', label: 'Jazz', parentId: 'music', level: 2, icon: null, displayOrder: 0, fullPath: 'Interests › Jazz', hasChildren: false, selectable: true, selfOnly: false },
+      { id: 'music', category: 'Interests', label: 'Music', parentId: null, level: 1, icon: null, displayOrder: 0, fullPath: 'Interests', hasChildren: true, selectable: false },
+      { id: 'jazz', category: 'Interests', label: 'Jazz', parentId: 'music', level: 2, icon: null, displayOrder: 0, fullPath: 'Interests › Jazz', hasChildren: false, selectable: true },
     ];
     const index = buildTagIndex(dictionary);
     const tagged: Graph = {

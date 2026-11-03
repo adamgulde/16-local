@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { fetchAllTags, type Tag } from '../../services/tagService';
-import type { TagCriteria } from '../../services/userService';
+import type { TagCriteria } from '../../graph/graphSearch';
 import { CloseIcon } from '../Icons';
 import { TagPicker, type TagPickerHandle } from './TagPicker';
 import { CategoryIcon } from './CategoryIcon';

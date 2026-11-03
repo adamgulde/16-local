@@ -13,8 +13,6 @@ interface TagsAndNotesProps {
   note?: string | null;
   // Called when the note is saved, so the caller's copy of the node stays in sync.
   onNoteChange?: (note: string) => void;
-  // '/api/users' (default) or '/api/contacts' — see TagSection.
-  endpointBase?: string;
   // Saves the note — the contact editor (ContactCard, F3) passes `PUT /api/contacts/{id}/note`.
   onSaveNote?: (subjectId: string, content: string) => Promise<void>;
 }
@@ -26,7 +24,6 @@ export const TagsAndNotes = ({
   onTagsChange,
   note,
   onNoteChange,
-  endpointBase,
   onSaveNote,
 }: TagsAndNotesProps) => {
   const savedNoteValue = note ?? '';
@@ -72,7 +69,6 @@ export const TagsAndNotes = ({
         isCurrentUser={isCurrentUser}
         tags={tags}
         onTagsChange={onTagsChange}
-        endpointBase={endpointBase}
       />
 
       {/* Private Notes Section (on other users only) */}

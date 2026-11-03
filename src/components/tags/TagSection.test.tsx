@@ -49,12 +49,6 @@ describe('TagSection', () => {
     expect(api.fetchTagsForUser).not.toHaveBeenCalled();
   });
 
-  it('fetches them itself in views without the directory', async () => {
-    render(<TagSection subjectId="u1" isCurrentUser />);
-
-    expect(await screen.findByText('Jazz')).toBeInTheDocument();
-    expect(api.fetchTagsForUser).toHaveBeenCalledWith('u1', undefined);
-  });
 
   it('hands edits back to the directory as functional updates', async () => {
     const onTagsChange = vi.fn();

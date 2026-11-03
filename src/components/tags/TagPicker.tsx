@@ -25,7 +25,6 @@ interface TagPickerProps {
   onClearQuery?: () => void;
   customNeedsParent?: boolean;
   // Tagging someone else: hide sensitive self-only categories entirely.
-  excludeSelfOnly?: boolean;
   density?: TagDensity;
   rows: number;
   disabled?: boolean;
@@ -56,7 +55,6 @@ export const TagPicker = ({
   onCreateCustom,
   onClearQuery,
   customNeedsParent = false,
-  excludeSelfOnly = false,
   density = 'regular',
   rows,
   disabled = false,
@@ -66,14 +64,13 @@ export const TagPicker = ({
   const [path, setPath] = useState<string[]>([]);
   const m = CHIP_METRICS[density];
 
-  const include = (tag: Tag) => !(excludeSelfOnly && tag.selfOnly);
-  const categories = index.categories.filter(include);
+  const categories = index.categories;
   const currentNode = path.length ? index.byId.get(path[path.length - 1]) ?? null : null;
   const trimmed = query.trim();
 
   const suggestions = useMemo(
-    () => searchTags(index, trimmed, { withinId: currentNode?.id, include: (t) => !(excludeSelfOnly && t.selfOnly) }),
-    [index, trimmed, currentNode, excludeSelfOnly]
+    () => searchTags(index, trimmed, { withinId: currentNode?.id }),
+    [index, trimmed, currentNode]
   );
   const exactMatch = suggestions.some((t) => t.label.toLowerCase() === trimmed.toLowerCase());
   const canCreate = !!onCreateCustom && trimmed.length > 0 && !exactMatch && (!customNeedsParent || !!currentNode);
@@ -160,7 +157,7 @@ export const TagPicker = ({
     );
   };
 
-  const children = currentNode ? index.childrenOf(currentNode.id).filter(include) : [];
+  const children = currentNode ? index.childrenOf(currentNode.id) : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>

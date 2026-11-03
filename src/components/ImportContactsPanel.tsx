@@ -15,7 +15,7 @@ import {
   type ImportCandidate,
   type ImportSourceContact,
 } from '../utils/contactImport';
-import { getSafeErrorMessage } from '../services/apiClient';
+import { getSafeErrorMessage } from '../utils/errors';
 
 interface ImportContactsPanelProps {
   // The user's current graph — used to mark who's already added (the server skips them anyway).

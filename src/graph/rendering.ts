@@ -3,7 +3,7 @@ import type { NodeObject, LinkObject, ForceGraphMethods } from 'react-force-grap
 import type { ForceGraphLink, ForceGraphNode } from './mapping';
 
 // The extra properties LinkObject merges alongside the resolved source/target node refs.
-export type LinkExtra = Pick<ForceGraphLink, 'kind' | 'shareId'>;
+export type LinkExtra = Pick<ForceGraphLink, 'kind'>;
 
 export type GNode = NodeObject<ForceGraphNode>;
 export type GLink = LinkObject<ForceGraphNode, LinkExtra>;
@@ -14,38 +14,39 @@ export const nodeRefId = (ref: string | number | GNode | undefined): string => {
   return typeof ref === 'object' ? String(ref.id) : String(ref);
 };
 
-// Below this globalScale (i.e. zoomed out far enough that labels would be unreadable clutter
-// anyway), skip drawing node labels entirely — text shaping/fillText is the actual bottleneck
-// once there are 100+ nodes on screen, far more than the circles themselves.
+// Below this globalScale (zoomed out far enough that labels are unreadable clutter anyway), node
+// labels are skipped — text shaping is the real bottleneck once 100+ nodes are on screen.
 export const LABEL_VISIBILITY_SCALE = 0.6;
 
-// Node color reflects kind (PLAN.md §5 F2), not degree of separation — the private graph has no
-// meaningful notion of "how many hops from me" once hidden/shared overlays are in the mix.
 export const SELF_COLOR = '#3d8bff';
-export const REGISTERED_COLOR = '#22c55e';
 export const PLACEHOLDER_COLOR = '#9ca3af';
-export const HIDDEN_COLOR = '#5a5a60';
-export const SHARED_TINT = '#e0a94c';
 
-export const colorForNode = (node: Pick<ForceGraphNode, 'kind' | 'sharerName'>): string => {
-  if (node.kind === 'HIDDEN') return HIDDEN_COLOR;
-  if (node.sharerName) return SHARED_TINT;
-  if (node.kind === 'SELF') return SELF_COLOR;
-  if (node.kind === 'REGISTERED') return REGISTERED_COLOR;
-  return PLACEHOLDER_COLOR;
-};
+export const colorForNode = (node: Pick<ForceGraphNode, 'kind'>): string =>
+  node.kind === 'SELF' ? SELF_COLOR : PLACEHOLDER_COLOR;
 
 const CHARGE = -60;
-const LINK_DISTANCE = 30;
+
+// Link length from your relationship strength (1–5): a strong contact sits close to you, a distant
+// one further out. Links between two of your contacts (LINK) use a fixed, medium length.
+const DIRECT_DISTANCE_MAX = 90; // strength 1
+const DIRECT_DISTANCE_STEP = 15; // each strength point shortens the link by this much
+const LINK_EDGE_DISTANCE = 45;
+
+/** Target length for a link, in graph units. Exported for tests. */
+export const linkDistanceFor = (link: GLink): number => {
+  if (link.kind !== 'DIRECT') return LINK_EDGE_DISTANCE;
+  // DIRECT links run from you (SELF) to a contact; the contact is the non-SELF end.
+  const target = typeof link.target === 'object' ? (link.target as GNode) : null;
+  const strength = target?.strength ?? 3;
+  return DIRECT_DISTANCE_MAX - (strength - 1) * DIRECT_DISTANCE_STEP;
+};
 
 // The layout is computed synchronously before the first frame is drawn and never animates:
 // d3's default cooling (alpha 1 → 0.001) takes 300 ticks, and cooldownTicks={0} stops the
 // engine right after, so the graph first appears already at rest. Spread into ForceGraph2D.
 export const STATIC_LAYOUT = { warmupTicks: 300, cooldownTicks: 0 } as const;
 
-/** Wires the charge/link forces — identical physics for every renderer. Private graphs are small
- * (contacts, not a whole directory), so a flat charge/link strength is enough; no more per-node
- * "distance from me" repulsion, which had no equivalent once hidden/shared nodes exist. */
+/** Wires the charge and link forces, identical for every renderer. */
 export const useGraphPhysics = (
   fgRef: RefObject<ForceGraphMethods<GNode, GLink> | undefined>,
   links: DisplayLink[]
@@ -64,7 +65,7 @@ export const useGraphPhysics = (
 
     fgRef.current
       ?.d3Force('link')
-      ?.distance(LINK_DISTANCE)
+      ?.distance((link: GLink) => linkDistanceFor(link))
       .strength((link: GLink) => {
         const s = degree.get(nodeRefId(link.source as string | GNode)) ?? 1;
         const t = degree.get(nodeRefId(link.target as string | GNode)) ?? 1;
@@ -128,40 +129,28 @@ interface NodeCanvasOptions {
   highlightNodes: Set<string>;
   activePath: string[] | null;
   filterNodes?: Set<string> | null;
-  // F5 interactive share mode: ids that should *draw* as "Hidden User" while the sharer is
-  // previewing what a viewer would see. Deliberately just a display override, never a different
-  // `node.kind`/`node.name` and never a different `graphData` object — see applyShareModePreview
-  // in mapping.ts for why (STATIC_LAYOUT must never re-run just to preview a toggle).
-  previewHiddenIds?: ReadonlySet<string> | null;
 }
 
-/** Identical node draw logic for every renderer — dimming, kind color/outline, zoom-scaled radius,
- * per PLAN.md §5 F2: SELF distinct, PLACEHOLDER dashed outline, REGISTERED solid, HIDDEN grey
- * "Hidden User", SHARED tinted (name already carries the "via {sharer}" suffix — see mapping.ts). */
+/** Node draw logic shared by every renderer: dimming, kind colour, zoom-scaled radius. SELF is a
+ * solid blue dot, contacts are hollow dashed circles. */
 export const drawNode = (
   node: GNode,
   ctx: CanvasRenderingContext2D,
   globalScale: number,
-  { highlightNodes, activePath, filterNodes = null, previewHiddenIds = null }: NodeCanvasOptions
+  { highlightNodes, activePath, filterNodes = null }: NodeCanvasOptions
 ) => {
   const idStr = String(node.id);
   const isHighlighted = highlightNodes.has(idStr);
   const isFilteredOut = filterNodes !== null && !filterNodes.has(idStr) && node.kind !== 'SELF';
   const dimmed = (activePath !== null && !isHighlighted) || isFilteredOut;
-  const isPreviewHidden = previewHiddenIds?.has(idStr) ?? false;
-  const displayKind = isPreviewHidden ? 'HIDDEN' : node.kind;
-  const displayName = isPreviewHidden ? 'Hidden User' : node.name;
-  const nodeColor = isPreviewHidden ? HIDDEN_COLOR : colorForNode(node);
+  const nodeColor = colorForNode(node);
   const radius = (isHighlighted ? 12 : 8) / globalScale;
 
   ctx.globalAlpha = dimmed ? 0.15 : 1;
   ctx.beginPath();
-  // Radius given in screen pixels, not world units, so nodes stay a constant on-screen size at
-  // any zoom level instead of ballooning to fill the screen when zoomToFit lands on a tightly-
-  // clustered set.
+  // Radius in screen pixels, not world units, so nodes keep a constant on-screen size at any zoom.
   ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-  if (displayKind === 'PLACEHOLDER') {
-    // Placeholder (no account) — hollow, dashed outline instead of a solid fill.
+  if (node.kind === 'PLACEHOLDER') {
     ctx.setLineDash([3 / globalScale, 2 / globalScale]);
     ctx.lineWidth = 1.5 / globalScale;
     ctx.strokeStyle = isHighlighted ? 'red' : nodeColor;
@@ -179,18 +168,13 @@ export const drawNode = (
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = isHighlighted ? 'red' : '#f0f0f0';
-    ctx.fillText(displayName, node.x!, node.y! + radius + 1 / globalScale);
+    ctx.fillText(node.name, node.x!, node.y! + radius + 1 / globalScale);
   }
   ctx.globalAlpha = 1;
 };
 
-// Click/tap hit-testing runs against a separate offscreen canvas painted by this callback, not
-// against whatever nodeCanvasObject actually drew — left unset, force-graph derives a hit shape
-// from the visible draw, but that ties clickability to the same tiny on-screen radius (~8px)
-// that keeps nodes readable at any zoom. That radius is precise but punishing to hit exactly,
-// especially zoomed out with many nodes crowded together, or on a touch screen. Paint a larger
-// circle here instead, so a click/tap that lands near a node (not dead-on its visible dot)
-// still registers — identical for every renderer.
+// Click/tap hit-testing runs against a separate offscreen canvas. Paint a larger circle here so a
+// tap that lands near a node (not dead-on its visible dot) still registers.
 const CLICK_TARGET_RADIUS = 16;
 
 export const paintNodePointerArea = (
@@ -212,8 +196,7 @@ interface LinkColorOptions {
   filterNodes?: Set<string> | null;
 }
 
-/** Identical link color logic for every renderer — highlight, dimming, and a distinct look per
- * edge kind: DIRECT solid, LINK dashed, SHARED tinted+dashed (an overlay edge, not yours). */
+/** Link colour: highlight, dimming, and a look per edge kind (DIRECT solid, LINK dashed). */
 export const linkColorFor = (
   link: GLink,
   { highlightLinks, activePath, filterNodes = null }: LinkColorOptions
@@ -225,18 +208,14 @@ export const linkColorFor = (
 
   const isFilteredOut = filterNodes !== null && (!filterNodes.has(sourceId) || !filterNodes.has(targetId));
   const dimmed = activePath !== null || isFilteredOut;
-  const base: [number, number, number] = link.kind === 'SHARED' ? [224, 169, 76] : [200, 210, 220];
-  return `rgba(${base[0]}, ${base[1]}, ${base[2]}, ${dimmed ? 0.08 : 0.8})`;
+  return `rgba(200, 210, 220, ${dimmed ? 0.08 : 0.8})`;
 };
 
 export const linkLineDashFor = (link: GLink): number[] | null => (link.kind === 'DIRECT' ? null : [4, 4]);
 
-// Drawn 'after' the default line, only for links on the currently-open path — the underlying
-// link's source/target order is arbitrary (whichever edge the mapping happened to iterate first),
-// so a built-in linkDirectionalArrow* prop can't be trusted to point the right way; pathLinkTarget
-// instead records the true forward node (in path-traversal order) per hop, keyed by the unordered
-// pair, so the arrow is drawn along the path's actual direction regardless of which end the link
-// data calls "source".
+// Drawn 'after' the default line, only for links on the currently-open path. The link's
+// source/target order is arbitrary, so pathLinkTarget records the true forward node per hop and
+// the arrow follows the path's direction.
 export const drawPathArrow = (
   link: GLink,
   ctx: CanvasRenderingContext2D,

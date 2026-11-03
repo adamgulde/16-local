@@ -21,9 +21,7 @@ const baseNode: GraphNode = {
   phoneNumber: null,
   tags: [],
   note: '',
-  profile: null,
-  linkedUserId: null,
-  source: null,
+  strength: 3 as const,
   editable: true,
 };
 
@@ -69,135 +67,9 @@ describe('ContactCard', () => {
     expect(screen.getByText('Met at a conference.')).toBeInTheDocument();
   });
 
-  it('renders read-only for a shared (not-yours) node — no edit/link/delete', () => {
-    const shared: GraphNode = {
-      ...baseNode,
-      id: 'c2',
-      editable: false,
-      source: { shareId: 's1', sharerUserId: 'u1', sharerName: 'Sam Rivera' },
-    };
-    render(
-      <ContactCard
-        node={shared}
-        ownContacts={[]}
-        linkedIds={new Set()}
-        onClose={noop}
-        onUpdate={noop}
-        onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
-        onTagsChange={noop}
-        onNoteChange={noop}
-        onSaveNote={noopAsync}
-        onFindPath={noop}
-      />
-    );
 
-    expect(screen.getByText('via Sam Rivera')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Link to…' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
-    // Find Path is still offered — that's a client-side graph action, not an edit.
-    expect(screen.getByRole('button', { name: 'Find Path' })).toBeInTheDocument();
-  });
 
-  it('renders the shared Note and Phone (when included), plus "Their profile" for a linked user, in the read-only card', () => {
-    const shared: GraphNode = {
-      ...baseNode,
-      id: 'c2',
-      kind: 'REGISTERED',
-      editable: false,
-      phoneNumber: '+15551234567',
-      note: 'Follow up re: internship',
-      linkedUserId: 'u-jordan',
-      profile: { bio: 'I like hiking.', tags: [] },
-      source: { shareId: 's1', sharerUserId: 'u1', sharerName: 'Sam Rivera' },
-    };
-    render(
-      <ContactCard
-        node={shared}
-        ownContacts={[]}
-        linkedIds={new Set()}
-        onClose={noop}
-        onUpdate={noop}
-        onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
-        onTagsChange={noop}
-        onNoteChange={noop}
-        onSaveNote={noopAsync}
-        onFindPath={noop}
-      />
-    );
 
-    expect(screen.getByText('Follow up re: internship')).toBeInTheDocument();
-    expect(screen.getByText('+1 555-123-4567')).toBeInTheDocument();
-    expect(screen.getByText('Their profile')).toBeInTheDocument();
-    expect(screen.getByText('I like hiking.')).toBeInTheDocument();
-  });
-
-  it('falls back to consistent "not shared" copy for every read-only section left out of the share', () => {
-    const shared: GraphNode = {
-      ...baseNode,
-      id: 'c2',
-      about: '',
-      editable: false,
-      source: { shareId: 's1', sharerUserId: 'u1', sharerName: 'Sam Rivera' },
-    };
-    render(
-      <ContactCard
-        node={shared}
-        ownContacts={[]}
-        linkedIds={new Set()}
-        onClose={noop}
-        onUpdate={noop}
-        onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
-        onTagsChange={noop}
-        onNoteChange={noop}
-        onSaveNote={noopAsync}
-        onFindPath={noop}
-      />
-    );
-
-    expect(screen.getByText('Nothing written yet.')).toBeInTheDocument(); // About
-    expect(screen.getByText('No tags shared.')).toBeInTheDocument();
-    expect(screen.getByText('No note shared.')).toBeInTheDocument();
-    expect(screen.getByText('No phone shared.')).toBeInTheDocument();
-  });
-
-  it('renders only "Hidden User" for a HIDDEN node, with no actions at all', () => {
-    const hidden: GraphNode = {
-      ...baseNode,
-      id: 'c3',
-      kind: 'HIDDEN',
-      firstName: 'Hidden',
-      lastName: 'User',
-      editable: false,
-      source: { shareId: 's1', sharerUserId: 'u1', sharerName: 'Sam Rivera' },
-    };
-    render(
-      <ContactCard
-        node={hidden}
-        ownContacts={[]}
-        linkedIds={new Set()}
-        onClose={noop}
-        onUpdate={noop}
-        onDelete={noop}
-        onLink={noop}
-        onUnlink={noop}
-        onTagsChange={noop}
-        onNoteChange={noop}
-        onSaveNote={noopAsync}
-        onFindPath={noop}
-      />
-    );
-
-    expect(screen.getByText('Hidden User')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Find Path' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-  });
 
   it('caps the SELF bio editor at 2,000 characters (users.bio DB column limit)', () => {
     const selfNode: GraphNode = {

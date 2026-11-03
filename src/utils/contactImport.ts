@@ -38,16 +38,14 @@ export const nameKey = (firstName: string, lastName: string): string =>
 export const candidateDisplayName = (c: ImportCandidate): string => `${c.firstName} ${c.lastName}`.trim();
 
 /**
- * Ids of candidates already in the user's own graph — same rule the server applies (phone match
- * when the candidate has a phone, otherwise full-name match), so what's shown as "Already added"
- * is exactly what the import would skip.
+ * Ids of candidates already in the graph, using the same rule the import applies (phone match when
+ * the candidate has a phone, otherwise full-name match), so "Already added" matches what gets skipped.
  */
 export const findExistingCandidates = (candidates: ImportCandidate[], nodes: GraphNode[]): Set<string> => {
   const phones = new Set<string>();
   const names = new Set<string>();
   for (const n of nodes) {
-    if (n.kind !== 'PLACEHOLDER' && n.kind !== 'REGISTERED') continue;
-    if (n.source) continue;
+    if (n.kind !== 'PLACEHOLDER') continue;
     const pk = phoneKey(n.phoneNumber);
     if (pk) phones.add(pk);
     names.add(nameKey(n.firstName, n.lastName));
