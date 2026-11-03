@@ -43,3 +43,14 @@ describe('labels when zoomed out', () => {
     expect(far.texts).toEqual(['Climbing']);
   });
 });
+
+describe('node opacity when zoomed out', () => {
+  it('is fully opaque when zoomed in, fades as you zoom out, and bottoms out', async () => {
+    const { nodeAlphaForScale } = await import('./rendering');
+    expect(nodeAlphaForScale(2)).toBe(1);
+    expect(nodeAlphaForScale(1)).toBe(1);
+    expect(nodeAlphaForScale(0.65)).toBeGreaterThan(nodeAlphaForScale(0.4));
+    expect(nodeAlphaForScale(0.4)).toBeGreaterThan(nodeAlphaForScale(0.1));
+    expect(nodeAlphaForScale(0.1)).toBeCloseTo(0.55);
+  });
+});

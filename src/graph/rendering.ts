@@ -15,9 +15,22 @@ export const nodeRefId = (ref: string | number | GNode | undefined): string => {
   return typeof ref === 'object' ? String(ref.id) : String(ref);
 };
 
-// Below this globalScale (zoomed out far), person names are hidden: they'd be unreadable clutter. Tag
-// group names are not affected and stay visible at every zoom.
-export const LABEL_VISIBILITY_SCALE = 0.6;
+// Below this globalScale, person names are hidden: they'd be unreadable clutter once you're zoomed out.
+// Tag group names are not affected and stay visible at every zoom.
+export const LABEL_VISIBILITY_SCALE = 1.0;
+
+// Nodes fade as you zoom out, so the tag regions behind them read more clearly. Fully opaque at
+// FULL_OPACITY_SCALE and above; at MIN_OPACITY_SCALE and below they reach MIN_NODE_ALPHA.
+const FULL_OPACITY_SCALE = 1.0;
+const MIN_OPACITY_SCALE = 0.3;
+const MIN_NODE_ALPHA = 0.55;
+
+export const nodeAlphaForScale = (globalScale: number): number => {
+  if (globalScale >= FULL_OPACITY_SCALE) return 1;
+  if (globalScale <= MIN_OPACITY_SCALE) return MIN_NODE_ALPHA;
+  const t = (globalScale - MIN_OPACITY_SCALE) / (FULL_OPACITY_SCALE - MIN_OPACITY_SCALE);
+  return MIN_NODE_ALPHA + t * (1 - MIN_NODE_ALPHA);
+};
 
 export const SELF_COLOR = '#3d8bff';
 export const PLACEHOLDER_COLOR = '#9ca3af';
@@ -325,7 +338,7 @@ export const drawNode = (
   const nodeColor = colorForNode(node);
   const radius = (isHighlighted ? 12 : 8) / globalScale;
 
-  ctx.globalAlpha = dimmed ? 0.15 : 1;
+  ctx.globalAlpha = dimmed ? 0.15 : nodeAlphaForScale(globalScale);
   ctx.beginPath();
   // Radius in screen pixels, not world units, so nodes keep a constant on-screen size at any zoom.
   ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
